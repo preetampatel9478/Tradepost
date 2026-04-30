@@ -3,7 +3,7 @@ import { Provider as ReduxProvider } from 'react-redux';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import RootNavigator from './src/navigation/RootNavigator';
-import store from './src/redux/store';
+import store from './src/store/store';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 
 export default function App() {

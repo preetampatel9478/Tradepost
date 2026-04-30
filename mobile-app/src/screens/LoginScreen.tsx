@@ -10,58 +10,66 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useAppDispatch } from '../redux/hooks';
-import { setToken, setUser } from '../redux/slices/authSlice';
+import { useAppDispatch } from '../hooks/reduxHooks';
+import { setToken, setUser } from '../store/slices/authSlice';
 
 export default function LoginScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
-  const [email, setEmail] = useState('');
+  
+  // Single input for either identifier
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLogin = () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing fields', 'Enter email and password to continue.');
+    if (!identifier.trim() || !password.trim()) {
+      Alert.alert('Missing fields', 'Enter your Mobile Number or User ID, and password.');
       return;
     }
 
     setIsSubmitting(true);
 
+    // Simulate Backend API call targeting DB `$or: [{ mobileNumber: identifier }, { userId: identifier }]`
     setTimeout(() => {
       dispatch(
         setUser({
           id: 'demo-user',
-          email: email.trim(),
+          email: 'demo@example.com',
           name: 'TradePost User',
+          userId: identifier, // Display purposes
           isVerified: false,
         })
       );
       dispatch(setToken('demo-token'));
       setIsSubmitting(false);
-    }, 400);
+    }, 800);
+  };
+
+  const handleForgotPassword = () => {
+    Alert.alert('Forgot Password', 'Please enter your Mobile Number or User ID to receive a reset OTP.');
+    // Implement navigation to OTP reset flow here
   };
 
   return (
     <SafeAreaView style={styles.screen}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
         <View style={styles.container}>
           <View style={styles.hero}>
             <Text style={styles.brand}>TradePost</Text>
             <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to continue to your trading feed.</Text>
+            <Text style={styles.subtitle}>Sign in using your Mobile Number or User ID.</Text>
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Mobile Number or User ID</Text>
             <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
+              value={identifier}
+              onChangeText={setIdentifier}
+              placeholder="e.g. +91 9876543210 or @trader_john"
               placeholderTextColor="#6F6F86"
-              keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
             />
@@ -70,11 +78,19 @@ export default function LoginScreen({ navigation }: any) {
             <TextInput
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter your password"
+              placeholder="••••••••"
               placeholderTextColor="#6F6F86"
               secureTextEntry
               style={styles.input}
             />
+
+            <TouchableOpacity
+              style={styles.forgotBtn}
+              onPress={handleForgotPassword}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
@@ -82,7 +98,9 @@ export default function LoginScreen({ navigation }: any) {
               activeOpacity={0.85}
               disabled={isSubmitting}
             >
-              <Text style={styles.primaryButtonText}>{isSubmitting ? 'Signing in...' : 'Sign In'}</Text>
+              <Text style={styles.primaryButtonText}>
+                {isSubmitting ? 'Authenticating...' : 'Secure Sign In'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -90,7 +108,7 @@ export default function LoginScreen({ navigation }: any) {
               onPress={() => navigation.navigate('Register')}
               activeOpacity={0.85}
             >
-              <Text style={styles.secondaryButtonText}>Create an account</Text>
+              <Text style={styles.secondaryButtonText}>New to TradePost? Create an account</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -100,87 +118,21 @@ export default function LoginScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  screen: {
-    flex: 1,
-    backgroundColor: '#0F0F1E',
-  },
-  container: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  hero: {
-    marginBottom: 24,
-  },
-  brand: {
-    color: '#00D084',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 34,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: '#A0A0A0',
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  card: {
-    backgroundColor: '#1A1A2E',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  label: {
-    color: '#CFCFE2',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#121226',
-    color: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-  },
-  primaryButton: {
-    backgroundColor: '#00D084',
-    borderRadius: 16,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  primaryButtonText: {
-    color: '#07130D',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    marginTop: 14,
-    paddingVertical: 8,
-  },
-  secondaryButtonText: {
-    color: '#A0A0A0',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  flex: { flex: 1 },
+  screen: { flex: 1, backgroundColor: '#0F0F1E' },
+  container: { flex: 1, padding: 24, justifyContent: 'center' },
+  hero: { marginBottom: 24 },
+  brand: { color: '#00D084', fontSize: 14, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 },
+  title: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', marginBottom: 8 },
+  subtitle: { color: '#A0A0A0', fontSize: 16, lineHeight: 22 },
+  card: { backgroundColor: '#1A1A2E', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  label: { color: '#CFCFE2', fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 16 },
+  input: { backgroundColor: '#121226', color: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 16, paddingVertical: 14, fontSize: 16 },
+  forgotBtn: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 8 },
+  forgotText: { color: '#00D084', fontSize: 13, fontWeight: '600' },
+  primaryButton: { backgroundColor: '#00D084', borderRadius: 16, paddingVertical: 15, alignItems: 'center', marginTop: 10 },
+  buttonDisabled: { opacity: 0.7 },
+  primaryButtonText: { color: '#07130D', fontSize: 16, fontWeight: '800' },
+  secondaryButton: { alignItems: 'center', marginTop: 20, paddingVertical: 8 },
+  secondaryButtonText: { color: '#A0A0A0', fontSize: 14, fontWeight: '600' },
 });

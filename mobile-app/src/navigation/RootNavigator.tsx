@@ -4,7 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, View } from 'react-native';
-import { useAppSelector } from '../redux/hooks';
+import { useAppSelector } from '../hooks/reduxHooks';
 import GlobalHeader from '../components/common/GlobalHeader';
 import HomeScreen from '../screens/HomeScreen';
 import StockScreen from '../screens/StockScreen';

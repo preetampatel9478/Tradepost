@@ -22,8 +22,8 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react-native';
-import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { logout } from '../redux/slices/authSlice';
+import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks';
+import { logout } from '../store/slices/authSlice';
 import ProfileModal from '../components/common/ProfileModal';
 import { useTheme } from '../contexts/ThemeContext';
 

@@ -1,59 +1,36 @@
 import express from 'express';
-import logger from '../utils/logger';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User';
 
 const router = express.Router();
 
-/**
- * @route   POST /api/auth/register
- * @desc    Register new user
- * @access  Public
- */
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
-    logger.info('Register endpoint called');
-    res.status(200).json({
-      success: true,
-      message: 'Register endpoint - Implementation pending'
-    });
-  } catch (error) {
-    logger.error('Register error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    const { mobileNumber, userId, password, tc_accepted, tc_device } = req.body;
+    const existingUser = await User.findOne({ $or: [{ mobileNumber }, { userId }] });
+    if (existingUser) return res.status(400).json({ error: 'User already exists' });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = new User({ mobileNumber, userId, passwordHash, tc_accepted, tc_timestamp: new Date(), tc_device });
+    await user.save();
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    res.status(201).json({ user: { id: user._id, userId: user.userId, mobileNumber: user.mobileNumber }, token });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-/**
- * @route   POST /api/auth/login
- * @desc    Login user
- * @access  Public
- */
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
-    logger.info('Login endpoint called');
-    res.status(200).json({
-      success: true,
-      message: 'Login endpoint - Implementation pending'
-    });
-  } catch (error) {
-    logger.error('Login error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-/**
- * @route   POST /api/auth/logout
- * @desc    Logout user
- * @access  Private
- */
-router.post('/logout', (req, res) => {
-  try {
-    logger.info('Logout endpoint called');
-    res.status(200).json({
-      success: true,
-      message: 'Logout endpoint - Implementation pending'
-    });
-  } catch (error) {
-    logger.error('Logout error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    const { identifier, password } = req.body;
+    const user = await User.findOne({ $or: [{ mobileNumber: identifier }, { userId: identifier }] });
+    if (!user) return res.status(400).json({ error: 'Invalid credentials' });
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    res.json({ user: { id: user._id, userId: user.userId, mobileNumber: user.mobileNumber, profilePhoto: user.profilePhoto }, token });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

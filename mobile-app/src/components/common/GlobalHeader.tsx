@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { Clock, CheckCircle } from 'lucide-react-native';
-import { useAppSelector } from '../../redux/hooks';
+import { useAppSelector } from '../../hooks/reduxHooks';
 import ProfileModal from './ProfileModal';
 
 interface GlobalHeaderProps {

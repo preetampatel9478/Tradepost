@@ -1,31 +1,28 @@
 import express from 'express';
-import logger from '../utils/logger';
+import Post from '../models/Post';
+import { auth } from '../middlewares/auth';
 
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  logger.info('Get posts endpoint');
-  res.json({ success: true, message: 'Posts endpoint - Implementation pending' });
+router.post('/', auth, async (req, res) => {
+  try {
+    const { content, sentiment, mediaUrls } = req.body;
+    const post = new Post({ author: req.user?._id, content, sentiment, mediaUrls });
+    await post.save();
+    const populated = await post.populate('author', 'userId profilePhoto');
+    res.status(201).json(populated);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-router.post('/', (req, res) => {
-  logger.info('Create post endpoint');
-  res.json({ success: true, message: 'Create post endpoint - Implementation pending' });
-});
-
-router.get('/:id', (req, res) => {
-  logger.info(`Get post ${req.params.id}`);
-  res.json({ success: true, message: 'Get post endpoint - Implementation pending' });
-});
-
-router.put('/:id', (req, res) => {
-  logger.info(`Update post ${req.params.id}`);
-  res.json({ success: true, message: 'Update post endpoint - Implementation pending' });
-});
-
-router.delete('/:id', (req, res) => {
-  logger.info(`Delete post ${req.params.id}`);
-  res.json({ success: true, message: 'Delete post endpoint - Implementation pending' });
+router.get('/', async (req, res) => {
+  try {
+    const posts = await Post.find().populate('author', 'userId profilePhoto').sort({ createdAt: -1 }).limit(50);
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 export default router;
