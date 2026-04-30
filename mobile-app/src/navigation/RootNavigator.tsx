@@ -13,6 +13,7 @@ import SearchScreen from '../screens/SearchScreen';
 import ChatScreen from '../screens/ChatScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import { useTheme } from '../contexts/ThemeContext';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -31,11 +32,13 @@ function AuthStack() {
 }
 
 function AppTabs() {
+  const { theme, colors } = useTheme();
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#07111D' }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: ['Home', 'Search', 'Messages'].includes(route.name),
+        headerShown: ['Search', 'Messages'].includes(route.name),
         headerTransparent: true,
         header: () => <GlobalHeader title={route.name === 'Messages' ? 'Chat' : route.name} />,
         tabBarStyle: {
@@ -43,26 +46,27 @@ function AppTabs() {
           left: 16,
           right: 16,
           bottom: 14,
-          backgroundColor: 'rgba(17, 17, 33, 0.96)',
-          borderTopWidth: 0,
+          backgroundColor: theme === 'light' ? '#FFFFFF' : 'rgba(17, 17, 33, 0.96)',
+          borderTopWidth: theme === 'light' ? 1 : 0,
+          borderTopColor: colors.border,
           borderRadius: 24,
           height: 72,
           paddingBottom: 10,
           paddingTop: 10,
           paddingHorizontal: 10,
           shadowColor: '#000000',
-          shadowOpacity: 0.25,
-          shadowRadius: 18,
+          shadowOpacity: theme === 'light' ? 0.05 : 0.25,
+          shadowRadius: theme === 'light' ? 10 : 18,
           shadowOffset: { width: 0, height: 10 },
-          elevation: 18,
+          elevation: theme === 'light' ? 2 : 18,
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '700',
           marginTop: 2,
         },
-        tabBarActiveTintColor: '#6EF3A5',
-        tabBarInactiveTintColor: '#8D93A7',
+        tabBarActiveTintColor: theme === 'light' ? colors.verifiedBlue : '#6EF3A5',
+        tabBarInactiveTintColor: theme === 'light' ? '#94A3B8' : '#8D93A7',
         tabBarItemStyle: {
           borderRadius: 18,
           marginHorizontal: 4,

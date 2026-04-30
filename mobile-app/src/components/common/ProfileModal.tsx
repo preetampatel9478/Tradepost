@@ -8,11 +8,14 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  Image,
+  Switch,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Settings, Bell, CircleHelp, User, LogOut, ChevronRight } from 'lucide-react-native';
+import { Settings, Bell, CircleHelp, User, LogOut, ChevronRight, Moon } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +29,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'TradePost User';
   const isVerified = user?.isVerified ?? false;
+  const { colors, theme, themeMode, setThemeMode } = useTheme();
 
   const translateX = useRef(new Animated.Value(-width)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -79,86 +83,120 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
       <View style={styles.modalContainer}>
         <TouchableWithoutFeedback onPress={handleClose}>
-          <Animated.View style={[styles.backdrop, { opacity }]}>
-            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <Animated.View style={[styles.backdrop, { opacity, backgroundColor: theme === 'light' ? 'rgba(15, 23, 42, 0.2)' : 'rgba(15, 23, 42, 0.6)' }]}>
+            <BlurView intensity={theme === 'light' ? 5 : 20} tint={theme === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFillObject} />
           </Animated.View>
         </TouchableWithoutFeedback>
 
-        <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
+        <Animated.View style={[styles.drawer, { transform: [{ translateX }], backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={styles.drawerContent}>
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.avatarLarge}>
-                <Text style={styles.avatarTextLarge}>TP</Text>
+              <View style={[styles.avatarLarge, { borderColor: colors.verifiedBlue, backgroundColor: colors.card }]}>
+                {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={styles.avatarImageLarge} />
+                ) : (
+                    <Text style={[styles.avatarTextLarge, { color: colors.text }]}>{user?.name ? user.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase() : 'TU'}</Text>
+                )}
                 {isVerified && (
-                  <View style={styles.verificationBadge}>
-                    <View style={styles.verificationInner} />
+                  <View style={[styles.verificationBadge, { backgroundColor: colors.background }]}>
+                    <View style={[styles.verificationInner, { borderColor: colors.background }]} />
                   </View>
                 )}
               </View>
-              <Text style={styles.userName}>{userName}</Text>
-              <Text style={styles.userHandle}>@tradepost_user</Text>
+              <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
+              <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@tradepost_user</Text>
             </View>
 
             {/* Stats Row */}
-            <View style={styles.statsRow}>
+            <View style={[styles.statsRow, { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' }]}>
               <View style={styles.statColumn}>
-                <Text style={styles.statValue}>1.2k</Text>
-                <Text style={styles.statLabel}>Followers</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>1.2k</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
               </View>
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <View style={styles.statColumn}>
-                <Text style={styles.statValue}>150</Text>
-                <Text style={styles.statLabel}>Posts</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>150</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Posts</Text>
               </View>
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <View style={styles.statColumn}>
-                <Text style={styles.statValue}>450</Text>
-                <Text style={styles.statLabel}>Following</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>450</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
               </View>
             </View>
 
             {/* Menu List */}
             <View style={styles.menuContainer}>
               <TouchableOpacity style={styles.menuItem}>
-                <View style={styles.menuIconWrap}>
-                  <User size={20} color="#3B82F6" />
+                <View style={[styles.menuIconWrap, { backgroundColor: theme === 'light' ? '#EFF6FF' : 'rgba(59, 130, 246, 0.1)' }]}>
+                  <User size={20} color={colors.verifiedBlue} />
                 </View>
-                <Text style={styles.menuItemText}>My Profile</Text>
-                <ChevronRight size={20} color="#334155" />
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>My Profile</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Edit and check out what you post</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.menuItem}>
-                <View style={styles.menuIconWrap}>
-                  <Settings size={20} color="#3B82F6" />
+                <View style={[styles.menuIconWrap, { backgroundColor: theme === 'light' ? '#EFF6FF' : 'rgba(59, 130, 246, 0.1)' }]}>
+                  <Settings size={20} color={colors.verifiedBlue} />
                 </View>
-                <Text style={styles.menuItemText}>Account Settings</Text>
-                <ChevronRight size={20} color="#334155" />
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Account Settings</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Privacy, security, language</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.menuItem}>
-                <View style={styles.menuIconWrap}>
-                  <Bell size={20} color="#3B82F6" />
+                <View style={[styles.menuIconWrap, { backgroundColor: theme === 'light' ? '#EFF6FF' : 'rgba(59, 130, 246, 0.1)' }]}>
+                  <Bell size={20} color={colors.verifiedBlue} />
                 </View>
-                <Text style={styles.menuItemText}>Notification</Text>
-                <ChevronRight size={20} color="#334155" />
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Notification</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Push, email alerts</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.menuItem}>
-                <View style={styles.menuIconWrap}>
-                  <CircleHelp size={20} color="#3B82F6" />
+                <View style={[styles.menuIconWrap, { backgroundColor: theme === 'light' ? '#EFF6FF' : 'rgba(59, 130, 246, 0.1)' }]}>
+                  <CircleHelp size={20} color={colors.verifiedBlue} />
                 </View>
-                <Text style={styles.menuItemText}>Help Support</Text>
-                <ChevronRight size={20} color="#334155" />
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Help Support</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>FAQs, contact us</Text>
+                </View>
+                <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
+
+              {/* Theme Toggle */}
+              <View style={styles.menuItem}>
+                <View style={[styles.menuIconWrap, { backgroundColor: theme === 'light' ? '#EFF6FF' : 'rgba(59, 130, 246, 0.1)' }]}>
+                  <Moon size={20} color={colors.verifiedBlue} />
+                </View>
+                <View style={styles.menuTextContainer}>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Dark Mode</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>{themeMode === 'system' ? 'System Default' : (themeMode === 'dark' ? 'On' : 'Off')}</Text>
+                </View>
+                <Switch 
+                  value={theme === 'dark'}
+                  onValueChange={(val) => setThemeMode(val ? 'dark' : 'light')}
+                  trackColor={{ false: '#94A3B8', true: colors.verifiedBlue }}
+                  thumbColor={'#fff'}
+                  ios_backgroundColor="#E2E8F0"
+                />
+              </View>
             </View>
 
             <View style={styles.spacer} />
 
             {/* Logout Button */}
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <LogOut size={20} color="#EF4444" style={styles.logoutIcon} />
-              <Text style={styles.logoutText}>Sign Out</Text>
+            <TouchableOpacity style={[styles.logoutButton, { backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(239, 68, 68, 0.1)' }]} onPress={handleLogout}>
+              <LogOut size={20} color={colors.bearish} style={styles.logoutIcon} />
+              <Text style={[styles.logoutText, { color: colors.bearish }]}>Sign Out</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -206,6 +244,11 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
     marginBottom: 16,
     position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarImageLarge: {
+    width: '100%',
+    height: '100%',
   },
   avatarTextLarge: {
     color: '#FFFFFF',
@@ -292,11 +335,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 16,
   },
-  menuItemText: {
+  menuTextContainer: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  menuItemText: {
     color: '#F8FAFC',
     fontSize: 16,
     fontWeight: '600',
+    marginBottom: 2,
+  },
+  menuSubText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '500',
   },
   spacer: {
     flex: 1,

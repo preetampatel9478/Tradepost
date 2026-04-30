@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { logout } from '../redux/slices/authSlice';
+import ProfileModal from '../components/common/ProfileModal';
+import { useTheme } from '../contexts/ThemeContext';
 
 type Sentiment = 'BULLISH' | 'BEARISH';
 
@@ -76,15 +78,17 @@ const POSTS: OpinionPost[] = [
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
+  const [modalVisible, setModalVisible] = useState(false);
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'Trader';
   const userAvatar = user?.avatar;
   const userInitials = getInitials(userName);
   const currentUserVerified = user?.isVerified ?? false;
+  const { theme, colors } = useTheme();
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={theme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
       <View style={[styles.topGlow, styles.topGlowOne]} />
       <View style={[styles.topGlow, styles.topGlowTwo]} />
       <View style={[styles.topGlow, styles.topGlowThree]} />
@@ -94,45 +98,42 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity activeOpacity={0.85} style={styles.profileButton}>
-            <View style={styles.profileAvatarWrap}>
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingBadgeText}>P</Text>
-              </View>
-              <View style={styles.profileAvatar}>
+          <TouchableOpacity activeOpacity={0.85} style={styles.avatarButton} onPress={() => setModalVisible(true)}>
+            <View style={[styles.avatarShell, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {userAvatar ? (
-                <Image source={{ uri: userAvatar }} style={styles.profileImage} />
+                <Image source={{ uri: userAvatar }} style={styles.avatarImage} />
               ) : (
-                <Text style={styles.profileInitials}>{userInitials}</Text>
+                <Text style={[styles.avatarInitials, { color: colors.text }]}>{userInitials}</Text>
               )}
-              <View style={styles.activeDot} />
+              <View style={[styles.activeDotGlow, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                <View style={[styles.activeDot, { borderColor: colors.card }]} />
               </View>
             </View>
           </TouchableOpacity>
 
-          <BlurView intensity={28} tint="dark" style={styles.searchShell}>
-            <Search size={18} color="#94A3B8" strokeWidth={2.2} />
+          <BlurView intensity={theme === 'light' ? 0 : 28} tint={theme === 'light' ? "light" : "dark"} style={[styles.searchShell, { backgroundColor: colors.searchBg, borderColor: colors.border }]}>
+            <Search size={18} color={theme === 'light' ? '#64748B' : '#94A3B8'} strokeWidth={2.2} />
             <TextInput
               placeholder="Search users or stocks..."
-              placeholderTextColor="#94A3B8"
-              style={styles.searchInput}
+              placeholderTextColor={theme === 'light' ? '#64748B' : '#94A3B8'}
+              style={[styles.searchInput, { color: colors.text }]}
               editable={false}
             />
           </BlurView>
         </View>
 
-        <View style={styles.feedIntroCard}>
+        <View style={[styles.feedIntroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.feedIntroTopRow}>
             <View>
               <Text style={styles.feedIntroLabel}>VideTrader</Text>
-              <Text style={styles.feedIntroTitle}>Social trading built for SEBI-aware opinions</Text>
+              <Text style={[styles.feedIntroTitle, { color: colors.text }]}>Social trading built for SEBI-aware opinions</Text>
             </View>
             <View style={styles.verificationPill}>
-              <BadgeCheck size={16} color="#3B82F6" strokeWidth={2.5} />
+              <BadgeCheck size={16} color={colors.verifiedBlue} strokeWidth={2.5} />
               <Text style={styles.verificationText}>{currentUserVerified ? 'Verified' : 'Pending'}</Text>
             </View>
           </View>
-          <Text style={styles.feedIntroText}>
+          <Text style={[styles.feedIntroText, { color: colors.textSecondary }]}>
             Share research, follow sentiment, and keep every opinion tied to a hard-coded safety disclaimer.
           </Text>
         </View>
@@ -141,108 +142,107 @@ export default function HomeScreen() {
           <OpinionCard key={post.id} post={post} />
         ))}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={() => dispatch(logout())} activeOpacity={0.85}>
-          <Text style={styles.logoutText}>Sign out</Text>
-        </TouchableOpacity>
       </ScrollView>
+      <ProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} />
     </View>
   );
 }
 
 function OpinionCard({ post }: { post: OpinionPost }) {
   const bullish = post.sentiment === 'BULLISH';
+  const { theme, colors } = useTheme();
 
   return (
-    <View style={styles.cardShell}>
-      <BlurView intensity={22} tint="dark" style={styles.card}>
+    <View style={[styles.cardShell, theme === 'light' && styles.cardLightShadow]}>
+      <BlurView intensity={theme === 'light' ? 0 : 22} tint={theme === 'light' ? "light" : "dark"} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: theme === 'light' ? 0 : 1 }]}>
         <View style={styles.cardTopRow}>
           <View style={styles.identityRow}>
-            <View style={styles.cardAvatarWrap}>
-              <View style={styles.cardAvatarFallback}>
-                <Text style={styles.cardAvatarText}>{getInitials(post.userName)}</Text>
+            <View style={[styles.cardAvatarWrap, { borderColor: colors.border }]}>
+              <View style={[styles.cardAvatarFallback, { backgroundColor: theme === 'light' ? '#F1F5F9' : '#1E293B' }]}>
+                <Text style={[styles.cardAvatarText, { color: colors.text }]}>{getInitials(post.userName)}</Text>
               </View>
               {post.verified ? (
-                <View style={styles.tickBadge}>
-                  <BadgeCheck size={15} color="#3B82F6" strokeWidth={2.6} />
+                <View style={[styles.tickBadge, { backgroundColor: colors.card }]}>
+                  <BadgeCheck size={15} color={colors.verifiedBlue} strokeWidth={2.6} />
                 </View>
               ) : null}
             </View>
 
             <View style={styles.identityCopy}>
-              <Text style={styles.cardName}>{post.userName}</Text>
-              <Text style={styles.cardHandle}>{post.handle}</Text>
+              <Text style={[styles.cardName, { color: colors.text }]}>{post.userName}</Text>
+              <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>{post.handle}</Text>
             </View>
           </View>
 
-          <View style={[styles.sentimentBadge, bullish ? styles.bullishBadge : styles.bearishBadge]}>
+          <View style={[styles.sentimentBadge, bullish ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' } : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' }]}>
             {bullish ? (
-              <Rocket size={15} color="#22C55E" strokeWidth={2.4} />
+              <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
             ) : (
-              <TrendingDown size={15} color="#F97316" strokeWidth={2.6} />
+              <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
             )}
-            <Text style={[styles.sentimentText, bullish ? styles.bullishText : styles.bearishText]}>{post.sentiment}</Text>
+            <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>{post.sentiment}</Text>
           </View>
         </View>
 
         <View style={styles.tradeTypePill}>
-          <Text style={styles.tradeTypeText}>{post.tradeType}</Text>
+          <Text style={[styles.tradeTypeText, { color: colors.text }]}>{post.tradeType}</Text>
         </View>
 
-        <Text style={styles.postContent}>{post.content}</Text>
+        <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
 
         <View style={styles.visualShell}>
           <View style={styles.visualHeader}>
-            <Text style={styles.visualLabel}>{post.visualLabel}</Text>
-            <Text style={styles.visualMeta}>Tap to expand</Text>
+            <Text style={[styles.visualLabel, { color: colors.textSecondary }]}>{post.visualLabel}</Text>
+            <Text style={[styles.visualMeta, { color: colors.textSecondary }]}>Tap to expand</Text>
           </View>
-          <View style={styles.pnlShell}>
+          <View style={[styles.pnlShell, { backgroundColor: theme === 'light' ? '#F8FAFC' : 'rgba(15, 23, 42, 0.4)' }]}>
             <View style={styles.pnlHeaderRow}>
               <View>
-                <Text style={styles.pnlTitle}>P&amp;L Snapshot</Text>
-                <Text style={styles.pnlMeta}>Clean table preview</Text>
+                <Text style={[styles.pnlTitle, { color: colors.text }]}>P&amp;L Snapshot</Text>
+                <Text style={[styles.pnlMeta, { color: colors.textSecondary }]}>Clean table preview</Text>
               </View>
-              <View style={styles.pnlButton}>
-                <Text style={styles.pnlButtonText}>Screenshot / P&amp;L</Text>
+              <View style={[styles.pnlButton, { backgroundColor: theme === 'light' ? '#E2E8F0' : 'rgba(255, 255, 255, 0.1)' }]}>
+                <Text style={[styles.pnlButtonText, { color: colors.text }]}>Screenshot / P&amp;L</Text>
               </View>
             </View>
             <View style={styles.pnlTable}>
-              <View style={styles.pnlTableRow}>
-                <Text style={styles.pnlCellLabel}>Entry</Text>
-                <Text style={styles.pnlCellValue}>₹ 1,245.20</Text>
+              <View style={[styles.pnlTableRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Entry</Text>
+                <Text style={[styles.pnlCellValue, { color: colors.text }]}>₹ 1,245.20</Text>
+              </View>
+              <View style={[styles.pnlTableRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Current</Text>
+                <Text style={[styles.pnlCellValue, { color: colors.bullish }]}>₹ 1,311.80</Text>
               </View>
               <View style={styles.pnlTableRow}>
-                <Text style={styles.pnlCellLabel}>Current</Text>
-                <Text style={[styles.pnlCellValue, styles.pnlPositive]}>₹ 1,311.80</Text>
-              </View>
-              <View style={styles.pnlTableRow}>
-                <Text style={styles.pnlCellLabel}>Net P&amp;L</Text>
-                <Text style={[styles.pnlCellValue, styles.pnlPositive]}>+ 5.34%</Text>
+                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Net P&amp;L</Text>
+                <Text style={[styles.pnlCellValue, { color: colors.bullish }]}>+ 5.34%</Text>
               </View>
             </View>
           </View>
         </View>
 
-        <View style={styles.engagementRow}>
+        <View style={[styles.engagementRow, { borderTopColor: colors.border }]}>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <Heart size={18} color="#E2E8F0" strokeWidth={2.2} />
-            <Text style={styles.engagementText}>{post.likes}</Text>
+            <Heart size={18} color={colors.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.likes}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <MessageCircle size={18} color="#E2E8F0" strokeWidth={2.2} />
-            <Text style={styles.engagementText}>{post.comments}</Text>
+            <MessageCircle size={18} color={colors.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.comments}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <Share2 size={18} color="#E2E8F0" strokeWidth={2.2} />
-            <Text style={styles.engagementText}>{post.shares}</Text>
+            <Share2 size={18} color={colors.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.shares}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <Bookmark size={18} color="#E2E8F0" strokeWidth={2.2} />
-            <Text style={styles.engagementText}>Save</Text>
+            <Bookmark size={18} color={colors.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>Save</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.disclaimerBar}>
-          <Text style={styles.disclaimerText}>
+        <View style={[styles.disclaimerBox, { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' }]}>
+          <Text style={[styles.disclaimerText, { color: colors.disclaimer }]}>
             This post is my opinion, not a suggestion. Consult a SEBI registered advisor before investing.
           </Text>
         </View>
@@ -306,70 +306,50 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingTop: 20,
+    gap: 12, // Ensure 12px gap
+    paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 14,
   },
-  profileButton: {
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarButton: {
+    marginRight: 0,
   },
-  profileAvatarWrap: {
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pendingBadge: {
-    position: 'absolute',
-    top: -4,
-    left: -2,
-    zIndex: 2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.28)',
-  },
-  pendingBadgeText: {
-    color: '#BFDBFE',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  profileAvatar: {
+  avatarShell: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: '#1E293B',
+    borderWidth: 1.5,
+    borderColor: 'rgba(148, 163, 184, 0.24)',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    position: 'relative',
   },
-  profileImage: {
+  avatarImage: {
     width: '100%',
     height: '100%',
+    borderRadius: 24,
   },
-  profileInitials: {
+  avatarInitials: {
     color: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '900',
-    letterSpacing: 0.6,
+    letterSpacing: 0.7,
+  },
+  activeDotGlow: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
   },
   activeDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 11,
-    height: 11,
+    width: 12,
+    height: 12,
     borderRadius: 6,
     backgroundColor: '#22C55E',
     borderWidth: 2,
@@ -377,8 +357,8 @@ const styles = StyleSheet.create({
   },
   searchShell: {
     flex: 1,
-    minHeight: 52,
-    borderRadius: 26,
+    height: 48, // matching Avatar height
+    borderRadius: 24, // perfectly pill-shaped
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.14)',
     backgroundColor: 'rgba(15, 23, 42, 0.42)',
@@ -456,6 +436,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     overflow: 'hidden',
+  },
+  cardLightShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   cardTopRow: {
     flexDirection: 'row',
