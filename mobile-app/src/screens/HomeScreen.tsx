@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -23,57 +23,9 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks';
-import { logout } from '../store/slices/authSlice';
 import ProfileModal from '../components/common/ProfileModal';
 import { useTheme } from '../contexts/ThemeContext';
-
-type Sentiment = 'BULLISH' | 'BEARISH';
-
-interface OpinionPost {
-  id: string;
-  userName: string;
-  handle: string;
-  avatar?: string;
-  verified: boolean;
-  sentiment: Sentiment;
-  tradeType: string;
-  content: string;
-  visualLabel: string;
-  likes: number;
-  comments: number;
-  shares: number;
-}
-
-const POSTS: OpinionPost[] = [
-  {
-    id: '1',
-    userName: 'Aarav Mehta',
-    handle: '@aarav_trades',
-    verified: true,
-    sentiment: 'BULLISH',
-    tradeType: 'F&O Trade',
-    content:
-      'Momentum is still intact after the pullback. Watching the breakout zone with disciplined risk on the invalidation level.',
-    visualLabel: 'P&L snapshot',
-    likes: 128,
-    comments: 24,
-    shares: 9,
-  },
-  {
-    id: '2',
-    userName: 'Neha Sharma',
-    handle: '@neha_marketview',
-    verified: false,
-    sentiment: 'BEARISH',
-    tradeType: 'Next Day Prediction',
-    content:
-      'Weak breadth and repeated rejection near resistance keep me cautious. I am waiting for confirmation before adding exposure.',
-    visualLabel: 'News capture',
-    likes: 76,
-    comments: 13,
-    shares: 6,
-  },
-];
+import { fetchPosts, type ApiPost } from '../store/slices/postSlice';
 
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
@@ -84,7 +36,14 @@ export default function HomeScreen() {
   const userAvatar = user?.avatar;
   const userInitials = getInitials(userName);
   const currentUserVerified = user?.isVerified ?? false;
+  const postsState = useAppSelector((state) => state.posts);
   const { theme, colors } = useTheme();
+
+  useEffect(() => {
+    dispatch(fetchPosts());
+  }, [dispatch]);
+
+  const posts = postsState.posts;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -122,24 +81,21 @@ export default function HomeScreen() {
           </BlurView>
         </View>
 
-        <View style={[styles.feedIntroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.feedIntroTopRow}>
-            <View>
-              <Text style={styles.feedIntroLabel}>VideTrader</Text>
-              <Text style={[styles.feedIntroTitle, { color: colors.text }]}>Social trading built for SEBI-aware opinions</Text>
-            </View>
-            <View style={styles.verificationPill}>
-              <BadgeCheck size={16} color={colors.verifiedBlue} strokeWidth={2.5} />
-              <Text style={styles.verificationText}>{currentUserVerified ? 'Verified' : 'Pending'}</Text>
-            </View>
+        {postsState.error ? (
+          <View style={[styles.errorBanner, { borderColor: colors.border, backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)' }]}> 
+            <Text style={[styles.errorText, { color: theme === 'light' ? '#B91C1C' : colors.bearish }]}>{postsState.error}</Text>
           </View>
-          <Text style={[styles.feedIntroText, { color: colors.textSecondary }]}>
-            Share research, follow sentiment, and keep every opinion tied to a hard-coded safety disclaimer.
-          </Text>
-        </View>
+        ) : null}
 
-        {POSTS.map((post) => (
-          <OpinionCard key={post.id} post={post} />
+        {!postsState.isLoading && !postsState.error && posts.length === 0 ? (
+          <View style={[styles.emptyState, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No posts yet</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Go to “Post Your Opinion” and publish your first post.</Text>
+          </View>
+        ) : null}
+
+        {posts.map((post) => (
+          <OpinionCard key={post._id} post={post} />
         ))}
 
       </ScrollView>
@@ -148,9 +104,18 @@ export default function HomeScreen() {
   );
 }
 
-function OpinionCard({ post }: { post: OpinionPost }) {
-  const bullish = post.sentiment === 'BULLISH';
+function OpinionCard({ post }: { post: ApiPost }) {
+  const bullish = (post.sentiment || 'neutral') === 'bullish';
   const { theme, colors } = useTheme();
+
+  const displayName = useMemo(() => post.author?.userId || 'Trader', [post.author?.userId]);
+  const handle = useMemo(() => (post.author?.userId ? `@${post.author.userId}` : '@trader'), [post.author?.userId]);
+  const avatarUrl = post.author?.profilePhoto;
+  const createdAt = useMemo(() => {
+    const d = new Date(post.createdAt);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString();
+  }, [post.createdAt]);
 
   return (
     <View style={[styles.cardShell, theme === 'light' && styles.cardLightShadow]}>
@@ -158,82 +123,65 @@ function OpinionCard({ post }: { post: OpinionPost }) {
         <View style={styles.cardTopRow}>
           <View style={styles.identityRow}>
             <View style={[styles.cardAvatarWrap, { borderColor: colors.border }]}>
-              <View style={[styles.cardAvatarFallback, { backgroundColor: theme === 'light' ? '#F1F5F9' : '#1E293B' }]}>
-                <Text style={[styles.cardAvatarText, { color: colors.text }]}>{getInitials(post.userName)}</Text>
-              </View>
-              {post.verified ? (
-                <View style={[styles.tickBadge, { backgroundColor: colors.card }]}>
-                  <BadgeCheck size={15} color={colors.verifiedBlue} strokeWidth={2.6} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.cardAvatarImage} />
+              ) : (
+                <View style={[styles.cardAvatarFallback, { backgroundColor: theme === 'light' ? '#F1F5F9' : '#1E293B' }]}>
+                  <Text style={[styles.cardAvatarText, { color: colors.text }]}>{getInitials(displayName)}</Text>
                 </View>
-              ) : null}
+              )}
             </View>
 
             <View style={styles.identityCopy}>
-              <Text style={[styles.cardName, { color: colors.text }]}>{post.userName}</Text>
-              <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>{post.handle}</Text>
+              <Text style={[styles.cardName, { color: colors.text }]}>{displayName}</Text>
+              <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>{handle}{createdAt ? ` · ${createdAt}` : ''}</Text>
             </View>
           </View>
 
-          <View style={[styles.sentimentBadge, bullish ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' } : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' }]}>
-            {bullish ? (
+          <View style={[styles.sentimentBadge, (post.sentiment || 'neutral') === 'neutral'
+            ? { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(148, 163, 184, 0.12)', borderColor: colors.border }
+            : bullish
+              ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
+              : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' }
+          ]}>
+            {(post.sentiment || 'neutral') === 'neutral' ? (
+              <TrendingUp size={15} color={colors.textSecondary} strokeWidth={2.4} />
+            ) : bullish ? (
               <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
             ) : (
               <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
             )}
-            <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>{post.sentiment}</Text>
+            <Text
+              style={[
+                styles.sentimentText,
+                (post.sentiment || 'neutral') === 'neutral'
+                  ? { color: colors.textSecondary }
+                  : bullish
+                    ? { color: colors.bullish }
+                    : { color: colors.bearish },
+              ]}
+            >
+              {(post.sentiment || 'neutral').toUpperCase()}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.tradeTypePill}>
-          <Text style={[styles.tradeTypeText, { color: colors.text }]}>{post.tradeType}</Text>
-        </View>
-
-        <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
-
-        <View style={styles.visualShell}>
-          <View style={styles.visualHeader}>
-            <Text style={[styles.visualLabel, { color: colors.textSecondary }]}>{post.visualLabel}</Text>
-            <Text style={[styles.visualMeta, { color: colors.textSecondary }]}>Tap to expand</Text>
-          </View>
-          <View style={[styles.pnlShell, { backgroundColor: theme === 'light' ? '#F8FAFC' : 'rgba(15, 23, 42, 0.4)' }]}>
-            <View style={styles.pnlHeaderRow}>
-              <View>
-                <Text style={[styles.pnlTitle, { color: colors.text }]}>P&amp;L Snapshot</Text>
-                <Text style={[styles.pnlMeta, { color: colors.textSecondary }]}>Clean table preview</Text>
-              </View>
-              <View style={[styles.pnlButton, { backgroundColor: theme === 'light' ? '#E2E8F0' : 'rgba(255, 255, 255, 0.1)' }]}>
-                <Text style={[styles.pnlButtonText, { color: colors.text }]}>Screenshot / P&amp;L</Text>
-              </View>
-            </View>
-            <View style={styles.pnlTable}>
-              <View style={[styles.pnlTableRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Entry</Text>
-                <Text style={[styles.pnlCellValue, { color: colors.text }]}>₹ 1,245.20</Text>
-              </View>
-              <View style={[styles.pnlTableRow, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Current</Text>
-                <Text style={[styles.pnlCellValue, { color: colors.bullish }]}>₹ 1,311.80</Text>
-              </View>
-              <View style={styles.pnlTableRow}>
-                <Text style={[styles.pnlCellLabel, { color: colors.textSecondary }]}>Net P&amp;L</Text>
-                <Text style={[styles.pnlCellValue, { color: colors.bullish }]}>+ 5.34%</Text>
-              </View>
-            </View>
-          </View>
-        </View>
+        <Text style={[styles.postContent, { color: colors.text }]}>
+          <HighlightedText text={post.content} />
+        </Text>
 
         <View style={[styles.engagementRow, { borderTopColor: colors.border }]}>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
             <Heart size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.likes}</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
             <MessageCircle size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.comments}</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
             <Share2 size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{post.shares}</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
             <Bookmark size={18} color={colors.textSecondary} strokeWidth={2.2} />
@@ -248,6 +196,37 @@ function OpinionCard({ post }: { post: OpinionPost }) {
         </View>
       </BlurView>
     </View>
+  );
+}
+
+function HighlightedText({ text }: { text: string }) {
+  const { colors } = useTheme();
+
+  const tokens = useMemo(() => {
+    const regex = /([@#$][A-Za-z0-9_]{1,32})/g;
+    return String(text || '').split(regex).filter((t) => t.length > 0);
+  }, [text]);
+
+  return (
+    <Text>
+      {tokens.map((token, idx) => {
+        const isMention = token.startsWith('@');
+        const isTag = token.startsWith('#');
+        const isStock = token.startsWith('$');
+        if (!isMention && !isTag && !isStock) return <Text key={`${idx}-t`}>{token}</Text>;
+        return (
+          <Text
+            key={`${idx}-h`}
+            style={[
+              styles.highlightToken,
+              { color: isMention ? colors.verifiedBlue : isStock ? colors.bearish : colors.bullish },
+            ]}
+          >
+            {token}
+          </Text>
+        );
+      })}
+    </Text>
   );
 }
 
@@ -310,6 +289,35 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 14,
+  },
+
+  errorBanner: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  errorText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  emptyState: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   avatarButton: {
     marginRight: 0,
@@ -459,8 +467,16 @@ const styles = StyleSheet.create({
   cardAvatarWrap: {
     width: 48,
     height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cardAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
   },
   cardAvatarFallback: {
     width: 48,
@@ -548,6 +564,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  highlightToken: {
+    fontWeight: '900',
   },
   visualShell: {
     marginBottom: 14,

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import logger from './logger';
+import type { Secret, SignOptions } from 'jsonwebtoken';
 
 interface TokenPayload {
   id: string;
@@ -8,8 +9,8 @@ interface TokenPayload {
   isVerified?: boolean;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '24h';
+const JWT_SECRET: Secret = process.env.JWT_SECRET || 'your_secret_key';
+const JWT_EXPIRY: SignOptions['expiresIn'] = (process.env.JWT_EXPIRY as SignOptions['expiresIn']) || '24h';
 
 export function generateToken(payload: TokenPayload): string {
   try {
@@ -42,9 +43,9 @@ export function decodeToken(token: string): TokenPayload | null {
 
 export function generateRefreshToken(userId: string): string {
   try {
-    return jwt.sign({ id: userId }, JWT_SECRET, {
-      expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '7d'
-    });
+    const refreshExpiry: SignOptions['expiresIn'] =
+      (process.env.REFRESH_TOKEN_EXPIRY as SignOptions['expiresIn']) || '7d';
+    return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: refreshExpiry });
   } catch (error) {
     logger.error('Error generating refresh token:', error);
     throw error;

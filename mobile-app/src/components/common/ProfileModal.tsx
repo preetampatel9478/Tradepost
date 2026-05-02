@@ -10,6 +10,7 @@ import {
   View,
   Image,
   Switch,
+  ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Settings, Bell, CircleHelp, User, LogOut, ChevronRight, Moon } from 'lucide-react-native';
@@ -28,6 +29,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'TradePost User';
+  const userHandle = user?.userId ? `@${user.userId}` : '@tradepost_user';
+  const joinedText = user?.createdAt ? `Joined ${new Date(user.createdAt).toDateString()}` : '';
   const isVerified = user?.isVerified ?? false;
   const { colors, theme, themeMode, setThemeMode } = useTheme();
 
@@ -89,7 +92,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
         </TouchableWithoutFeedback>
 
         <Animated.View style={[styles.drawer, { transform: [{ translateX }], backgroundColor: colors.background, borderColor: colors.border }]}>
-          <View style={styles.drawerContent}>
+          <ScrollView contentContainerStyle={styles.drawerContent} showsVerticalScrollIndicator={false}>
             {/* Header */}
             <View style={styles.header}>
               <View style={[styles.avatarLarge, { borderColor: colors.verifiedBlue, backgroundColor: colors.card }]}>
@@ -105,7 +108,10 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                 )}
               </View>
               <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
-              <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@tradepost_user</Text>
+              <Text style={[styles.userHandle, { color: colors.textSecondary }]}>{userHandle}</Text>
+              {joinedText ? (
+                <Text style={[styles.userHandle, { color: colors.textSecondary, marginTop: 6 }]}>{joinedText}</Text>
+              ) : null}
             </View>
 
             {/* Stats Row */}
@@ -198,7 +204,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
               <LogOut size={20} color={colors.bearish} style={styles.logoutIcon} />
               <Text style={[styles.logoutText, { color: colors.bearish }]}>Sign Out</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </Animated.View>
       </View>
     </Modal>
@@ -224,7 +230,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   drawerContent: {
-    flex: 1,
+    flexGrow: 1,
     paddingTop: 80,
     paddingHorizontal: 24,
     paddingBottom: 40,

@@ -12,6 +12,9 @@ import {
 } from 'react-native';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
+import api from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiErrorMessage } from '../utils/apiError';
 
 export default function LoginScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -21,7 +24,7 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Enter your Mobile Number or User ID, and password.');
       return;
@@ -29,20 +32,31 @@ export default function LoginScreen({ navigation }: any) {
 
     setIsSubmitting(true);
 
-    // Simulate Backend API call targeting DB `$or: [{ mobileNumber: identifier }, { userId: identifier }]`
-    setTimeout(() => {
+    try {
+      const response = await api.post('/auth/login', {
+        identifier: identifier.trim(),
+        password,
+      });
+
+      const { user, token } = response.data;
       dispatch(
         setUser({
-          id: 'demo-user',
-          email: 'demo@example.com',
-          name: 'TradePost User',
-          userId: identifier, // Display purposes
+          id: user.id,
+          name: user.userId,
+          userId: user.userId,
+          mobileNumber: user.mobileNumber,
+          avatar: user.avatar,
+          createdAt: user.createdAt,
           isVerified: false,
         })
       );
-      dispatch(setToken('demo-token'));
+      dispatch(setToken(token));
+      await AsyncStorage.setItem('authToken', token);
+    } catch (e: any) {
+      Alert.alert('Sign in failed', getApiErrorMessage(e));
+    } finally {
       setIsSubmitting(false);
-    }, 800);
+    }
   };
 
   const handleForgotPassword = () => {

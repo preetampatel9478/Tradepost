@@ -1,17 +1,54 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import api from '../../services/api';
+import { getApiErrorMessage } from '../../utils/apiError';
 
-interface Post {
-  id: string;
+export interface ApiPost {
+  _id: string;
+  author: {
+    _id: string;
+    userId: string;
+    profilePhoto?: string;
+  };
   content: string;
-  userId: string;
-  userName: string;
-  likes: number;
-  comments: number;
-  timestamp: string;
+  sentiment: 'bullish' | 'bearish' | 'neutral';
+  mediaUrls: string[];
+  mentions?: string[];
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
+export const fetchPosts = createAsyncThunk<ApiPost[], void, { rejectValue: string }>(
+  'posts/fetchPosts',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await api.get('/posts');
+      return res.data as ApiPost[];
+    } catch (e) {
+      return rejectWithValue(getApiErrorMessage(e));
+    }
+  }
+);
+
+export const createPost = createAsyncThunk<
+  ApiPost,
+  { content: string; sentiment?: ApiPost['sentiment'] },
+  { rejectValue: string }
+>('posts/createPost', async ({ content, sentiment = 'neutral' }, { rejectWithValue }) => {
+  try {
+    const res = await api.post('/posts', {
+      content,
+      sentiment,
+      mediaUrls: [],
+    });
+    return res.data as ApiPost;
+  } catch (e) {
+    return rejectWithValue(getApiErrorMessage(e));
+  }
+});
+
 interface PostState {
-  posts: Post[];
+  posts: ApiPost[];
   isLoading: boolean;
   error: string | null;
 }
@@ -27,25 +64,49 @@ const postSlice = createSlice({
   initialState,
   reducers: {
     setLoading: (state) => { state.isLoading = true; },
-    setPosts: (state, action: PayloadAction<Post[]>) => {
+    setPosts: (state, action: PayloadAction<ApiPost[]>) => {
       state.posts = action.payload;
       state.isLoading = false;
     },
-    addPost: (state, action: PayloadAction<Post>) => {
+    addPost: (state, action: PayloadAction<ApiPost>) => {
       state.posts.unshift(action.payload);
     },
-    updatePost: (state, action: PayloadAction<Post>) => {
-      const index = state.posts.findIndex(p => p.id === action.payload.id);
+    updatePost: (state, action: PayloadAction<ApiPost>) => {
+      const index = state.posts.findIndex(p => p._id === action.payload._id);
       if (index !== -1) state.posts[index] = action.payload;
     },
     deletePost: (state, action: PayloadAction<string>) => {
-      state.posts = state.posts.filter(p => p.id !== action.payload);
+      state.posts = state.posts.filter(p => p._id !== action.payload);
     },
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
       state.isLoading = false;
     }
-  }
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchPosts.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchPosts.fulfilled, (state, action) => {
+        state.posts = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(fetchPosts.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload || 'Failed to load posts';
+      })
+      .addCase(createPost.pending, (state) => {
+        state.error = null;
+      })
+      .addCase(createPost.fulfilled, (state, action) => {
+        state.posts.unshift(action.payload);
+      })
+      .addCase(createPost.rejected, (state, action) => {
+        state.error = action.payload || 'Failed to create post';
+      });
+  },
 });
 
 export const { setLoading, setPosts, addPost, updatePost, deletePost, setError } = postSlice.actions;

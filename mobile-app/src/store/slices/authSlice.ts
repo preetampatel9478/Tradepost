@@ -2,9 +2,12 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface User {
   id: string;
-  email: string;
+  email?: string;
   name: string;
-  avatar?: string;
+  userId?: string;
+  mobileNumber?: string;
+  avatar?: string; // profile photo URL
+  createdAt?: string; // signup time (ISO)
   isVerified?: boolean;
 }
 

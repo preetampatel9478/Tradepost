@@ -61,3 +61,6 @@ export function verifiedUserMiddleware(
   // Implementation depends on your User model
   next();
 }
+
+// Backwards-compatible alias used by some routes
+export const auth = authMiddleware;

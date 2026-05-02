@@ -18,6 +18,9 @@ import { Camera, CheckCircle2, Circle, Shield, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
+import api from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiErrorMessage } from '../utils/apiError';
 
 export default function RegisterScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -66,18 +69,45 @@ export default function RegisterScreen({ navigation }: any) {
   }, [userId]);
 
   const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-    if (!result.canceled) {
-      setProfilePhoto(result.assets[0].uri);
-    }
+    Alert.alert('Profile photo', 'Choose a photo source', [
+      {
+        text: 'Camera',
+        onPress: async () => {
+          const camPerm = await ImagePicker.requestCameraPermissionsAsync();
+          if (camPerm.status !== 'granted') {
+            Alert.alert('Permission needed', 'Camera permission is required.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.6,
+          });
+          if (!result.canceled) setProfilePhoto(result.assets[0].uri);
+        },
+      },
+      {
+        text: 'Gallery',
+        onPress: async () => {
+          const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (libPerm.status !== 'granted') {
+            Alert.alert('Permission needed', 'Gallery permission is required.');
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.6,
+          });
+          if (!result.canceled) setProfilePhoto(result.assets[0].uri);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!mobileNumber.trim() || !userId.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Enter Mobile Number, User ID, and Password.');
       return;
@@ -92,25 +122,49 @@ export default function RegisterScreen({ navigation }: any) {
     }
 
     setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('mobileNumber', mobileNumber.trim());
+      formData.append('userId', userId.trim());
+      formData.append('password', password);
+      formData.append('tc_accepted', 'true');
+      formData.append('tc_device', Platform.OS);
 
-    // Assume the auditData is sent securely with your payload:
-    // e.g. api.register({ ..., tc_accepted: true, tc_timestamp: auditData?.timestamp, tc_version: auditData?.app_version, tc_device: auditData?.device_id })
+      if (profilePhoto) {
+        formData.append(
+          'profilePhoto',
+          {
+            uri: profilePhoto,
+            name: 'profile.jpg',
+            type: 'image/jpeg',
+          } as any
+        );
+      }
 
-    // Simulate Registration API Call to backend
-    setTimeout(() => {
+      const response = await api.post('/auth/register', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const { user, token } = response.data;
       dispatch(
         setUser({
-          id: 'new-user-id',
-          email: email.trim(),
-          name: userId.trim(), // Normally this would be a separate Full Name
-          userId: userId.trim(),
+          id: user.id,
+          email: email.trim() || undefined,
+          name: user.userId,
+          userId: user.userId,
+          mobileNumber: user.mobileNumber,
+          avatar: user.avatar,
+          createdAt: user.createdAt,
           isVerified: false,
-          profilePhoto: profilePhoto, 
         })
       );
-      dispatch(setToken('new-demo-token'));
+      dispatch(setToken(token));
+      await AsyncStorage.setItem('authToken', token);
+    } catch (e: any) {
+      Alert.alert('Sign up failed', getApiErrorMessage(e));
+    } finally {
       setIsSubmitting(false);
-    }, 800);
+    }
   };
 
   return (

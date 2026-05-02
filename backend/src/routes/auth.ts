@@ -2,35 +2,76 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import { uploadAvatar, buildPublicFileUrl } from '../config/upload';
+import { createError } from '../middlewares/errorHandler';
 
 const router = express.Router();
 
-router.post('/register', async (req, res) => {
+router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, next) => {
   try {
     const { mobileNumber, userId, password, tc_accepted, tc_device } = req.body;
+    if (!mobileNumber?.trim()) return next(createError(400, 'Mobile Number is required'));
+    if (!userId?.trim()) return next(createError(400, 'User ID is required'));
+    if (!password || String(password).length < 6) return next(createError(400, 'Password must be at least 6 characters'));
     const existingUser = await User.findOne({ $or: [{ mobileNumber }, { userId }] });
-    if (existingUser) return res.status(400).json({ error: 'User already exists' });
+    if (existingUser) return next(createError(409, 'User already exists'));
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = new User({ mobileNumber, userId, passwordHash, tc_accepted, tc_timestamp: new Date(), tc_device });
+
+    const uploadedFile = (req as any).file as Express.Multer.File | undefined;
+    const profilePhoto = uploadedFile
+      ? buildPublicFileUrl(req, `/uploads/avatars/${uploadedFile.filename}`)
+      : '';
+
+    const user = new User({
+      mobileNumber,
+      userId,
+      passwordHash,
+      profilePhoto,
+      tc_accepted: tc_accepted === true || tc_accepted === 'true',
+      tc_timestamp: new Date(),
+      tc_device,
+    });
     await user.save();
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
-    res.status(201).json({ user: { id: user._id, userId: user.userId, mobileNumber: user.mobileNumber }, token });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(201).json({
+      user: {
+        id: user._id,
+        userId: user.userId,
+        mobileNumber: user.mobileNumber,
+        avatar: user.profilePhoto,
+        createdAt: user.createdAt,
+      },
+      token,
+    });
+  } catch (err: any) {
+    // Duplicate key protection (unique indexes)
+    if (err?.code === 11000) return next(createError(409, 'User already exists'));
+    return next(createError(500, 'Registration failed'));
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
+    if (!identifier?.trim()) return next(createError(400, 'Mobile Number or User ID is required'));
+    if (!password) return next(createError(400, 'Password is required'));
     const user = await User.findOne({ $or: [{ mobileNumber: identifier }, { userId: identifier }] });
-    if (!user) return res.status(400).json({ error: 'Invalid credentials' });
+    if (!user) return next(createError(400, 'Invalid credentials'));
     const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
+    if (!isMatch) return next(createError(400, 'Invalid credentials'));
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
-    res.json({ user: { id: user._id, userId: user.userId, mobileNumber: user.mobileNumber, profilePhoto: user.profilePhoto }, token });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.json({
+      user: {
+        id: user._id,
+        userId: user.userId,
+        mobileNumber: user.mobileNumber,
+        avatar: user.profilePhoto,
+        createdAt: user.createdAt,
+      },
+      token,
+    });
+  } catch (err: any) {
+    return next(createError(500, 'Login failed'));
   }
 });
 

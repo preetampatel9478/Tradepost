@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 import logger from './utils/logger';
 
 // Middleware imports
@@ -43,8 +44,11 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// ========== Static Uploads ==========
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 // ========== Logging ==========
-app.use(morgan('combined', { stream: { write: (message) => logger.info(message) } }));
+app.use(morgan('combined', { stream: { write: (message: string) => logger.info(message.trimEnd()) } }));
 app.use(requestLogger);
 
 // ========== Health Check ==========

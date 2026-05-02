@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+import multer from 'multer';
 
 interface ApiError extends Error {
   statusCode?: number;
@@ -12,8 +13,22 @@ export function errorHandler(
   res: Response,
   next: NextFunction
 ) {
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  let statusCode = err.statusCode || 500;
+  let message = err.message || 'Internal Server Error';
+
+  if (err instanceof multer.MulterError) {
+    statusCode = 400;
+    if (err.code === 'LIMIT_FILE_SIZE') message = 'Profile photo is too large (max 5MB)';
+    else message = err.message || 'Upload failed';
+  }
+
+  // Mongoose validation errors
+  const anyErr = err as any;
+  if (anyErr?.name === 'ValidationError') {
+    statusCode = 400;
+    const fieldMessages = anyErr?.errors ? Object.values(anyErr.errors).map((e: any) => e?.message).filter(Boolean) : [];
+    message = fieldMessages.length ? fieldMessages.join(', ') : 'Invalid input';
+  }
 
   logger.error(`[${statusCode}] ${message}`, {
     path: req.path,

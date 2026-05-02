@@ -5,7 +5,6 @@ import {
   View, 
   TextInput, 
   TouchableOpacity, 
-  Image, 
   Alert, 
   KeyboardAvoidingView, 
   Platform, 
@@ -15,9 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
-import { Image as ImageIcon, X, TrendingUp, TrendingDown, Info } from 'lucide-react-native';
-import { pickAndProcessImage, ProcessedImage } from '../utils/imageProcessor';
-import { useAppSelector } from '../hooks/reduxHooks'; // Use to check user status
+import { X, TrendingUp, TrendingDown, Info } from 'lucide-react-native';
+import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks'; // Use to check user status
+import { createPost } from '../store/slices/postSlice';
+import { getApiErrorMessage } from '../utils/apiError';
 
 interface PostFormData {
   opinion: string;
@@ -25,9 +25,9 @@ interface PostFormData {
 
 export default function ComposePostScreen({ navigation }: any) {
   const { colors } = useTheme();
+  const dispatch = useAppDispatch();
   const [isPosting, setIsPosting] = useState(false);
   const [sentiment, setSentiment] = useState<'BULLISH' | 'BEARISH' | null>(null);
-  const [mediaData, setMediaData] = useState<ProcessedImage | null>(null);
   
   // 3. Verification Check: Assume we extract user status from Redux
   const userStatus = useAppSelector(state => state.auth.user?.status || 'Active'); // Assume 'Active', 'Pending', 'Inactive'
@@ -37,18 +37,7 @@ export default function ComposePostScreen({ navigation }: any) {
   });
 
   const opinionValue = watch('opinion');
-  const isPostDisabled = (!opinionValue.trim() && !mediaData) || isPosting;
-
-  const handlePickMedia = async () => {
-    try {
-      const processedImage = await pickAndProcessImage();
-      if (processedImage) {
-        setMediaData(processedImage);
-      }
-    } catch (error) {
-      Alert.alert("Error", "Could not process the image.");
-    }
-  };
+  const isPostDisabled = !opinionValue.trim() || isPosting;
 
   const onSubmit = async (data: PostFormData) => {
     // Prevent non-verified users from posting
@@ -57,23 +46,19 @@ export default function ComposePostScreen({ navigation }: any) {
       return;
     }
 
-    if (!data.opinion.trim() && !mediaData) {
+    if (!data.opinion.trim()) {
       Alert.alert('Validation Error', 'You cannot create an empty post.');
       return;
     }
 
     setIsPosting(true);
     try {
-      // API integration to AWS S3 & your backend goes here
-      // e.g., await api.createOpinionPost(data.opinion, sentiment, mediaData);
-      
-      // Simulate network request
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
+      const apiSentiment = sentiment === 'BULLISH' ? 'bullish' : sentiment === 'BEARISH' ? 'bearish' : 'neutral';
+      await dispatch(createPost({ content: data.opinion.trim(), sentiment: apiSentiment })).unwrap();
       Alert.alert('Success', 'Your opinion has been published!');
-      if (navigation?.goBack) navigation.goBack();
+      navigation?.navigate?.('Home');
     } catch (error) {
-      Alert.alert('Upload Failed', 'There was an issue processing your post.');
+      Alert.alert('Post Failed', getApiErrorMessage(error));
     } finally {
       setIsPosting(false);
     }
@@ -116,7 +101,7 @@ export default function ComposePostScreen({ navigation }: any) {
               <View>
                 <TextInput
                   style={[styles.textInput, { color: colors.text }]}
-                  placeholder="Share your market analysis..."
+                  placeholder="Write your opinion… use @mention, #tag, $stock"
                   placeholderTextColor={colors.textSecondary}
                   multiline
                   textAlignVertical="top"
@@ -132,20 +117,6 @@ export default function ComposePostScreen({ navigation }: any) {
               </View>
             )}
           />
-
-          {/* High-Performance Media Preview */}
-          {mediaData && (
-            <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: mediaData.uri }} style={styles.imagePreview} />
-              <TouchableOpacity 
-                style={styles.removeImageButton} 
-                onPress={() => setMediaData(null)}
-                disabled={isPosting}
-              >
-                <X size={16} color="#FFF" />
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Priority: Sentiment Toggle */}
           <View style={styles.sentimentSection}>
@@ -180,15 +151,6 @@ export default function ComposePostScreen({ navigation }: any) {
              </TouchableOpacity>
           </View>
 
-          {/* Media Attach Button */}
-          <TouchableOpacity 
-            style={[styles.attachButton, { borderColor: colors.border }]} 
-            onPress={handlePickMedia}
-            disabled={isPosting}
-          >
-            <ImageIcon size={20} color={colors.verifiedBlue} />
-            <Text style={[styles.attachText, { color: colors.text }]}>Add P&L Screenshot</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* 3. SEBI Safety & Compliance Footer */}
@@ -226,13 +188,6 @@ const styles = StyleSheet.create({
   textInput: { fontSize: 18, minHeight: 140, lineHeight: 28 },
   charCount: { textAlign: 'right', fontSize: 12, marginTop: 4 },
   
-  imagePreviewContainer: { marginTop: 15, position: 'relative', borderRadius: 12, overflow: 'hidden' },
-  imagePreview: { width: '100%', height: 220, borderRadius: 12, resizeMode: 'cover' },
-  removeImageButton: {
-    position: 'absolute', top: 12, right: 12, width: 32, height: 32,
-    borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center', justifyContent: 'center'
-  },
   
   sentimentSection: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 16 },
   sentimentCard: {
@@ -240,12 +195,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderRadius: 12, borderWidth: 1, gap: 8
   },
   sentimentText: { fontWeight: '600', fontSize: 15 },
-  
-  attachButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', gap: 10
-  },
-  attachText: { fontSize: 15, fontWeight: '600' },
   
   safetyFooter: { 
     flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16, 
