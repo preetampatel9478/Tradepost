@@ -32,14 +32,14 @@ export const fetchPosts = createAsyncThunk<ApiPost[], void, { rejectValue: strin
 
 export const createPost = createAsyncThunk<
   ApiPost,
-  { content: string; sentiment?: ApiPost['sentiment'] },
+  { content: string; sentiment?: ApiPost['sentiment']; mediaUrls?: string[] },
   { rejectValue: string }
->('posts/createPost', async ({ content, sentiment = 'neutral' }, { rejectWithValue }) => {
+>('posts/createPost', async ({ content, sentiment = 'neutral', mediaUrls = [] }, { rejectWithValue }) => {
   try {
     const res = await api.post('/posts', {
       content,
       sentiment,
-      mediaUrls: [],
+      mediaUrls,
     });
     return res.data as ApiPost;
   } catch (e) {

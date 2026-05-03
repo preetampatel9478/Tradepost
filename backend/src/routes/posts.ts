@@ -2,6 +2,7 @@ import express from 'express';
 import Post from '../models/Post';
 import { auth, type AuthenticatedRequest } from '../middlewares/auth';
 import { createError } from '../middlewares/errorHandler';
+import { uploadPostMedia, buildPublicFileUrl } from '../config/upload';
 
 const router = express.Router();
 
@@ -39,6 +40,20 @@ router.post('/', auth, async (req: AuthenticatedRequest, res, next) => {
     res.status(201).json(populated);
   } catch (err) {
     return next(createError(500, 'Server error'));
+  }
+});
+
+router.post('/media', auth, uploadPostMedia.array('media', 5), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+
+    const files = ((req as any).files as Express.Multer.File[] | undefined) || [];
+    if (!files.length) return next(createError(400, 'No files uploaded'));
+
+    const urls = files.map((f) => buildPublicFileUrl(req, `/uploads/posts/${f.filename}`));
+    res.status(201).json({ mediaUrls: urls });
+  } catch (err) {
+    return next(createError(500, 'Media upload failed'));
   }
 });
 

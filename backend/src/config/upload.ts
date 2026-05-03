@@ -4,8 +4,10 @@ import multer from 'multer';
 
 const uploadsRoot = path.join(process.cwd(), 'uploads');
 const avatarsDir = path.join(uploadsRoot, 'avatars');
+const postsDir = path.join(uploadsRoot, 'posts');
 
 fs.mkdirSync(avatarsDir, { recursive: true });
+fs.mkdirSync(postsDir, { recursive: true });
 
 function safeFileBaseName(input: string) {
   return input
@@ -40,6 +42,36 @@ export const uploadAvatar = multer({
   fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
+  },
+});
+
+const postMediaStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, postsDir),
+  filename: (req, file, cb) => {
+    const userId = safeFileBaseName(String((req as any)?.userId ?? 'user'));
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+    const fileName = `${userId}_${Date.now()}${ext}`;
+    cb(null, fileName);
+  },
+});
+
+const postMediaFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
+  const ok = file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/');
+  if (!ok) {
+    const err = new Error('Only image/video uploads are allowed') as any;
+    err.statusCode = 400;
+    cb(err);
+    return;
+  }
+  cb(null, true);
+};
+
+export const uploadPostMedia = multer({
+  storage: postMediaStorage,
+  fileFilter: postMediaFilter,
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB per file
+    files: 5,
   },
 });
 

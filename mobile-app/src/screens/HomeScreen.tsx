@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Dimensions,
   Image,
   ScrollView,
   StatusBar,
@@ -14,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BadgeCheck,
   Bookmark,
+  ChevronLeft,
+  ChevronRight,
   Heart,
   MessageCircle,
   Rocket,
@@ -43,7 +46,7 @@ export default function HomeScreen() {
     dispatch(fetchPosts());
   }, [dispatch]);
 
-  const posts = postsState.posts;
+  const posts: ApiPost[] = postsState.posts as ApiPost[];
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -94,7 +97,7 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {posts.map((post) => (
+        {posts.map((post: ApiPost) => (
           <OpinionCard key={post._id} post={post} />
         ))}
 
@@ -108,6 +111,11 @@ function OpinionCard({ post }: { post: ApiPost }) {
   const bullish = (post.sentiment || 'neutral') === 'bullish';
   const { theme, colors } = useTheme();
 
+  const mediaUrls = useMemo(() => (post.mediaUrls || []).filter(Boolean).slice(0, 5), [post.mediaUrls]);
+  const carouselRef = useRef<ScrollView | null>(null);
+  const [carouselWidth, setCarouselWidth] = useState(0);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
   const displayName = useMemo(() => post.author?.userId || 'Trader', [post.author?.userId]);
   const handle = useMemo(() => (post.author?.userId ? `@${post.author.userId}` : '@trader'), [post.author?.userId]);
   const avatarUrl = post.author?.profilePhoto;
@@ -116,6 +124,23 @@ function OpinionCard({ post }: { post: ApiPost }) {
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleString();
   }, [post.createdAt]);
+
+  const scrollToIndex = (index: number) => {
+    if (!carouselRef.current || !carouselWidth) return;
+    carouselRef.current.scrollTo({ x: index * carouselWidth, animated: true });
+  };
+
+  const goPrev = () => {
+    const next = Math.max(0, carouselIndex - 1);
+    setCarouselIndex(next);
+    scrollToIndex(next);
+  };
+
+  const goNext = () => {
+    const next = Math.min(mediaUrls.length - 1, carouselIndex + 1);
+    setCarouselIndex(next);
+    scrollToIndex(next);
+  };
 
   return (
     <View style={[styles.cardShell, theme === 'light' && styles.cardLightShadow]}>
@@ -169,6 +194,63 @@ function OpinionCard({ post }: { post: ApiPost }) {
         <Text style={[styles.postContent, { color: colors.text }]}>
           <HighlightedText text={post.content} />
         </Text>
+
+        {!!mediaUrls.length && (
+          <View style={styles.mediaSection}>
+            {mediaUrls.length === 1 ? (
+              <View style={[styles.mediaSingleWrap, { borderColor: colors.border }]}> 
+                <Image source={{ uri: mediaUrls[0] }} style={styles.mediaSingleImage} resizeMode="cover" />
+              </View>
+            ) : (
+              <View
+                style={[styles.carouselWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
+                onLayout={(e) => {
+                  const w = Math.floor(e.nativeEvent.layout.width);
+                  if (w && w !== carouselWidth) setCarouselWidth(w);
+                }}
+              >
+                <ScrollView
+                  ref={(r) => {
+                    carouselRef.current = r;
+                  }}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={(e) => {
+                    if (!carouselWidth) return;
+                    const x = e.nativeEvent.contentOffset.x;
+                    const idx = Math.round(x / carouselWidth);
+                    setCarouselIndex(Math.max(0, Math.min(mediaUrls.length - 1, idx)));
+                  }}
+                >
+                  {mediaUrls.map((url, idx) => (
+                    <View key={`${url}_${idx}`} style={{ width: carouselWidth || Dimensions.get('window').width }}>
+                      <Image source={{ uri: url }} style={styles.carouselImage} resizeMode="cover" />
+                    </View>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[styles.carouselArrow, styles.carouselArrowLeft, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  activeOpacity={0.85}
+                  onPress={goPrev}
+                  disabled={carouselIndex <= 0}
+                >
+                  <ChevronLeft size={18} color={colors.text} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.carouselArrow, styles.carouselArrowRight, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  activeOpacity={0.85}
+                  onPress={goNext}
+                  disabled={carouselIndex >= mediaUrls.length - 1}
+                >
+                  <ChevronRight size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={[styles.engagementRow, { borderTopColor: colors.border }]}>
           <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
@@ -564,6 +646,49 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  mediaSection: {
+    marginBottom: 12,
+  },
+  mediaSingleWrap: {
+    width: '100%',
+    height: 240,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  mediaSingleImage: {
+    width: '100%',
+    height: '100%',
+  },
+  carouselWrap: {
+    width: '100%',
+    height: 260,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  carouselImage: {
+    width: '100%',
+    height: 260,
+  },
+  carouselArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.92,
+  },
+  carouselArrowLeft: {
+    left: 10,
+  },
+  carouselArrowRight: {
+    right: 10,
   },
   highlightToken: {
     fontWeight: '900',
