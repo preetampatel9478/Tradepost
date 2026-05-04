@@ -31,9 +31,9 @@ export default function GlobalHeader({ title }: GlobalHeaderProps) {
               {/* Status Icon */}
               <View style={styles.statusIconWrap}>
                 {isVerified ? (
-                  <CheckCircle size={14} color="#3B82F6" strokeWidth={3} backgroundColor="#0F172A" />
+                  <CheckCircle size={14} color="#3B82F6" strokeWidth={3} />
                 ) : (
-                  <Clock size={14} color="#F59E0B" strokeWidth={3} backgroundColor="#0F172A" />
+                  <Clock size={14} color="#F59E0B" strokeWidth={3} />
                 )}
               </View>
             </View>

@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
 import { X, TrendingUp, TrendingDown, Info } from 'lucide-react-native';
-import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks'; // Use to check user status
+import { useAppDispatch } from '../hooks/reduxHooks';
 import { createPost } from '../store/slices/postSlice';
 import { getApiErrorMessage } from '../utils/apiError';
 import * as ImagePicker from 'expo-image-picker';
@@ -45,9 +45,6 @@ export default function ComposePostScreen({ navigation }: any) {
   const contentWidth = Math.max(0, screenWidth - 40); // ScrollView content has 20px padding on each side
   const thumbGap = 10;
   const thumbSize = Math.floor((contentWidth - thumbGap * 2) / 3);
-  
-  // 3. Verification Check: Assume we extract user status from Redux
-  const userStatus = useAppSelector(state => state.auth.user?.status || 'Active'); // Assume 'Active', 'Pending', 'Inactive'
   
   const { control, handleSubmit, watch, formState: { errors } } = useForm<PostFormData>({
     defaultValues: { opinion: '' }
@@ -112,12 +109,6 @@ export default function ComposePostScreen({ navigation }: any) {
   };
 
   const onSubmit = async (data: PostFormData) => {
-    // Prevent non-verified users from posting
-    if (userStatus !== 'Active') {
-      Alert.alert('Account Verified Required', 'Your account must be fully verified to post opinions.');
-      return;
-    }
-
     if (!data.opinion.trim()) {
       Alert.alert('Validation Error', 'You cannot create an empty post.');
       return;

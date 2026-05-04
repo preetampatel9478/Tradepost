@@ -38,7 +38,7 @@ function AppTabs() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: ['Search', 'Messages'].includes(route.name),
+        headerShown: ['Messages'].includes(route.name),
         headerTransparent: true,
         header: () => <GlobalHeader title={route.name === 'Messages' ? 'Chat' : route.name} />,
         tabBarStyle: {

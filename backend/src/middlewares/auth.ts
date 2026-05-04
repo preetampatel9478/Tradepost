@@ -38,6 +38,22 @@ export function authMiddleware(
   }
 }
 
+export function optionalAuthMiddleware(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return next();
+
+    const decoded = verifyToken(token);
+    req.userId = decoded.id;
+    req.userEmail = decoded.email;
+    req.userRole = decoded.role;
+    return next();
+  } catch {
+    // Ignore invalid tokens for optional auth.
+    return next();
+  }
+}
+
 export function adminMiddleware(
   req: AuthenticatedRequest,
   res: Response,
@@ -64,3 +80,4 @@ export function verifiedUserMiddleware(
 
 // Backwards-compatible alias used by some routes
 export const auth = authMiddleware;
+export const optionalAuth = optionalAuthMiddleware;

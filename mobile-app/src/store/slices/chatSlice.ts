@@ -8,12 +8,11 @@ interface ChatMessage {
   timestamp: string;
 }
 
-interface ChatState {
+export interface ChatState {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
 }
-
 const initialState: ChatState = {
   messages: [],
   isLoading: false,

@@ -10,12 +10,11 @@ interface UserProfile {
   isVerified: boolean;
 }
 
-interface UserState {
+export interface UserState {
   currentUser: UserProfile | null;
   users: UserProfile[];
   isLoading: boolean;
 }
-
 const initialState: UserState = {
   currentUser: null,
   users: [],

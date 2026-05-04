@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -17,6 +17,7 @@ import { Settings, Bell, CircleHelp, User, LogOut, ChevronRight, Moon } from 'lu
 import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { logout } from '../../store/slices/authSlice';
 import { useTheme } from '../../contexts/ThemeContext';
+import api from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -28,11 +29,16 @@ interface ProfileModalProps {
 export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
-  const userName = user?.name ?? 'TradePost User';
-  const userHandle = user?.userId ? `@${user.userId}` : '@tradepost_user';
+  const displayName = user?.userId || user?.name || 'TradePost User';
+  const userHandle = user?.userId ? `@${user.userId}` : '';
   const joinedText = user?.createdAt ? `Joined ${new Date(user.createdAt).toDateString()}` : '';
   const isVerified = user?.isVerified ?? false;
   const { colors, theme, themeMode, setThemeMode } = useTheme();
+
+  const [profileStats, setProfileStats] = useState<{ followerCount: number; followingCount: number; postCount: number }>(
+    { followerCount: 0, followingCount: 0, postCount: 0 }
+  );
+  const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
 
   const translateX = useRef(new Animated.Value(-width)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -53,6 +59,54 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
       }),
     ]).start();
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const res = await api.get('/users/me');
+        const data = res.data as {
+          followerCount?: number;
+          followingCount?: number;
+          postCount?: number;
+          avatar?: string;
+        };
+
+        if (!isMounted) return;
+        setProfileStats({
+          followerCount: Number(data.followerCount ?? 0),
+          followingCount: Number(data.followingCount ?? 0),
+          postCount: Number(data.postCount ?? 0),
+        });
+        setProfileAvatar(data.avatar && String(data.avatar).trim() ? String(data.avatar) : null);
+      } catch {
+        // Keep existing state; fail silently for now.
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [visible]);
+
+  const formatCount = (n: number) => {
+    if (!Number.isFinite(n)) return '0';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+    if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+    return String(n);
+  };
+
+  const initials = displayName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part: string) => part[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'TU';
 
   const handleClose = () => {
     Animated.parallel([
@@ -96,10 +150,10 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
             {/* Header */}
             <View style={styles.header}>
               <View style={[styles.avatarLarge, { borderColor: colors.verifiedBlue, backgroundColor: colors.card }]}>
-                {user?.avatar ? (
-                    <Image source={{ uri: user.avatar }} style={styles.avatarImageLarge} />
+              {profileAvatar || user?.avatar ? (
+                <Image source={{ uri: profileAvatar || user?.avatar }} style={styles.avatarImageLarge} />
                 ) : (
-                    <Text style={[styles.avatarTextLarge, { color: colors.text }]}>{user?.name ? user.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase() : 'TU'}</Text>
+                <Text style={[styles.avatarTextLarge, { color: colors.text }]}>{initials}</Text>
                 )}
                 {isVerified && (
                   <View style={[styles.verificationBadge, { backgroundColor: colors.background }]}>
@@ -107,8 +161,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                   </View>
                 )}
               </View>
-              <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
-              <Text style={[styles.userHandle, { color: colors.textSecondary }]}>{userHandle}</Text>
+              <Text style={[styles.userName, { color: colors.text }]}>{displayName}</Text>
+              {userHandle ? <Text style={[styles.userHandle, { color: colors.textSecondary }]}>{userHandle}</Text> : null}
               {joinedText ? (
                 <Text style={[styles.userHandle, { color: colors.textSecondary, marginTop: 6 }]}>{joinedText}</Text>
               ) : null}
@@ -117,17 +171,17 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
             {/* Stats Row */}
             <View style={[styles.statsRow, { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' }]}>
               <View style={styles.statColumn}>
-                <Text style={[styles.statValue, { color: colors.text }]}>1.2k</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.followerCount)}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
               </View>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <View style={styles.statColumn}>
-                <Text style={[styles.statValue, { color: colors.text }]}>150</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.postCount)}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Posts</Text>
               </View>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <View style={styles.statColumn}>
-                <Text style={[styles.statValue, { color: colors.text }]}>450</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.followingCount)}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
               </View>
             </View>

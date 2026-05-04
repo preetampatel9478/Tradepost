@@ -14,6 +14,9 @@ export interface ApiPost {
   mediaUrls: string[];
   mentions?: string[];
   tags?: string[];
+  likeCount?: number;
+  commentCount?: number;
+  isLiked?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,7 +50,50 @@ export const createPost = createAsyncThunk<
   }
 });
 
-interface PostState {
+export const likePost = createAsyncThunk<ApiPost, { postId: string }, { rejectValue: string }>(
+  'posts/likePost',
+  async ({ postId }, { rejectWithValue }) => {
+    try {
+      const res = await api.post(`/posts/${postId}/like`);
+      return res.data as ApiPost;
+    } catch (e) {
+      return rejectWithValue(getApiErrorMessage(e));
+    }
+  }
+);
+
+export const unlikePost = createAsyncThunk<ApiPost, { postId: string }, { rejectValue: string }>(
+  'posts/unlikePost',
+  async ({ postId }, { rejectWithValue }) => {
+    try {
+      const res = await api.delete(`/posts/${postId}/like`);
+      return res.data as ApiPost;
+    } catch (e) {
+      return rejectWithValue(getApiErrorMessage(e));
+    }
+  }
+);
+
+export const createComment = createAsyncThunk<
+  { postId: string; likeCount: number; commentCount: number; comment: any },
+  { postId: string; content: string; parentCommentId?: string },
+  { rejectValue: string }
+>('posts/createComment', async ({ postId, content, parentCommentId }, { rejectWithValue }) => {
+  try {
+    const res = await api.post('/comments', { postId, content, parentCommentId });
+    const payload = res.data as any;
+    return {
+      postId,
+      likeCount: Number(payload?.post?.likeCount) || 0,
+      commentCount: Number(payload?.post?.commentCount) || 0,
+      comment: payload?.comment,
+    };
+  } catch (e) {
+    return rejectWithValue(getApiErrorMessage(e));
+  }
+});
+
+export interface PostState {
   posts: ApiPost[];
   isLoading: boolean;
   error: string | null;
@@ -81,6 +127,21 @@ const postSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
       state.isLoading = false;
+    },
+    patchPostEngagement: (
+      state,
+      action: PayloadAction<{ postId: string; likeCount?: number; commentCount?: number; isLiked?: boolean }>
+    ) => {
+      const { postId, likeCount, commentCount, isLiked } = action.payload;
+      const index = state.posts.findIndex((p) => p._id === postId);
+      if (index === -1) return;
+      const current = state.posts[index];
+      state.posts[index] = {
+        ...current,
+        ...(typeof likeCount === 'number' ? { likeCount } : {}),
+        ...(typeof commentCount === 'number' ? { commentCount } : {}),
+        ...(typeof isLiked === 'boolean' ? { isLiked } : {}),
+      };
     }
   },
   extraReducers: (builder) => {
@@ -105,9 +166,25 @@ const postSlice = createSlice({
       })
       .addCase(createPost.rejected, (state, action) => {
         state.error = action.payload || 'Failed to create post';
+      })
+      .addCase(likePost.fulfilled, (state, action) => {
+        const index = state.posts.findIndex((p) => p._id === action.payload._id);
+        if (index !== -1) state.posts[index] = action.payload;
+      })
+      .addCase(unlikePost.fulfilled, (state, action) => {
+        const index = state.posts.findIndex((p) => p._id === action.payload._id);
+        if (index !== -1) state.posts[index] = action.payload;
+      })
+      .addCase(createComment.fulfilled, (state, action) => {
+        const { postId, likeCount, commentCount } = action.payload;
+        const index = state.posts.findIndex((p) => p._id === postId);
+        if (index === -1) return;
+        const current = state.posts[index];
+        state.posts[index] = { ...current, likeCount, commentCount };
       });
   },
 });
 
-export const { setLoading, setPosts, addPost, updatePost, deletePost, setError } = postSlice.actions;
+export const { setLoading, setPosts, addPost, updatePost, deletePost, setError, patchPostEngagement } =
+  postSlice.actions;
 export default postSlice.reducer;

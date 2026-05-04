@@ -10,7 +10,7 @@ interface Stock {
   timestamp: string;
 }
 
-interface StockState {
+export interface StockState {
   stocks: Stock[];
   watchlist: string[];
   isLoading: boolean;

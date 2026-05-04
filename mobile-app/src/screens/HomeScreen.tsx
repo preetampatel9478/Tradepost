@@ -3,6 +3,7 @@ import {
   Dimensions,
   Image,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -14,7 +15,7 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BadgeCheck,
-  Bookmark,
+  Bell,
   ChevronLeft,
   ChevronRight,
   Heart,
@@ -27,13 +28,17 @@ import {
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks';
 import ProfileModal from '../components/common/ProfileModal';
+import { CommentsModal } from '../components/common/CommentsModal';
 import { useTheme } from '../contexts/ThemeContext';
-import { fetchPosts, type ApiPost } from '../store/slices/postSlice';
+import { fetchPosts, likePost, patchPostEngagement, type ApiPost, unlikePost } from '../store/slices/postSlice';
+import { disconnectSocket, getAuthedSocket } from '../services/socket';
+import api from '../services/api';
 
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
+  const [commentsForPostId, setCommentsForPostId] = useState<string | null>(null);
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'Trader';
   const userAvatar = user?.avatar;
@@ -46,7 +51,58 @@ export default function HomeScreen() {
     dispatch(fetchPosts());
   }, [dispatch]);
 
+  useEffect(() => {
+    let socketCleanup: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const socket = await getAuthedSocket();
+        const handler = (payload: { postId: string; likeCount: number; commentCount: number }) => {
+          dispatch(patchPostEngagement(payload));
+        };
+        socket.on('posts:engagementUpdated', handler);
+        socketCleanup = () => {
+          socket.off('posts:engagementUpdated', handler);
+        };
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      socketCleanup?.();
+      disconnectSocket();
+    };
+  }, [dispatch]);
+
   const posts: ApiPost[] = postsState.posts as ApiPost[];
+
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState<Array<{ _id: string; userId: string; profilePhoto?: string }>>([]);
+  const [userSearching, setUserSearching] = useState(false);
+
+  useEffect(() => {
+    const trimmed = userQuery.trim();
+    const t = setTimeout(async () => {
+      if (!trimmed) {
+        setUserResults([]);
+        setUserSearching(false);
+        return;
+      }
+
+      setUserSearching(true);
+      try {
+        const res = await api.get(`/users/search?q=${encodeURIComponent(trimmed)}`);
+        setUserResults((res.data as any[]) || []);
+      } catch {
+        setUserResults([]);
+      } finally {
+        setUserSearching(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(t);
+  }, [userQuery]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -76,13 +132,52 @@ export default function HomeScreen() {
           <BlurView intensity={theme === 'light' ? 0 : 28} tint={theme === 'light' ? "light" : "dark"} style={[styles.searchShell, { backgroundColor: colors.searchBg, borderColor: colors.border }]}>
             <Search size={18} color={theme === 'light' ? '#64748B' : '#94A3B8'} strokeWidth={2.2} />
             <TextInput
-              placeholder="Search users or stocks..."
+              placeholder="Search users..."
               placeholderTextColor={theme === 'light' ? '#64748B' : '#94A3B8'}
               style={[styles.searchInput, { color: colors.text }]}
-              editable={false}
+              value={userQuery}
+              onChangeText={setUserQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
             />
           </BlurView>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[styles.notifButton, { backgroundColor: colors.searchBg, borderColor: colors.border }]}
+            onPress={() => null}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
+          >
+            <Bell size={20} color={colors.textSecondary} strokeWidth={2.2} />
+          </TouchableOpacity>
         </View>
+
+        {userSearching || userResults.length ? (
+          <View style={[styles.userResultsCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            {userSearching ? (
+              <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>Searching…</Text>
+            ) : null}
+            {userResults.map((u) => (
+              <View key={u._id} style={[styles.userRow, { borderTopColor: colors.border }]}>
+                <View style={[styles.userAvatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
+                  {u.profilePhoto ? (
+                    <Image source={{ uri: u.profilePhoto }} style={styles.userAvatarImg} />
+                  ) : (
+                    <Text style={[styles.userAvatarFallback, { color: colors.text }]}>
+                      {(u.userId || 'T').slice(0, 1).toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.userName, { color: colors.text }]}>{u.userId}</Text>
+                  <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@{u.userId}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {postsState.error ? (
           <View style={[styles.errorBanner, { borderColor: colors.border, backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)' }]}> 
@@ -98,18 +193,30 @@ export default function HomeScreen() {
         ) : null}
 
         {posts.map((post: ApiPost) => (
-          <OpinionCard key={post._id} post={post} />
+          <OpinionCard key={post._id} post={post} onOpenComments={(postId) => setCommentsForPostId(postId)} />
         ))}
 
       </ScrollView>
       <ProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} />
+      <CommentsModal
+        visible={Boolean(commentsForPostId)}
+        postId={commentsForPostId}
+        onClose={() => setCommentsForPostId(null)}
+      />
     </View>
   );
 }
 
-function OpinionCard({ post }: { post: ApiPost }) {
-  const bullish = (post.sentiment || 'neutral') === 'bullish';
+function OpinionCard({ post, onOpenComments }: { post: ApiPost; onOpenComments: (postId: string) => void }) {
+  const sentiment = post.sentiment || 'neutral';
+  const bullish = sentiment === 'bullish';
+  const showSentiment = sentiment === 'bullish' || sentiment === 'bearish';
   const { theme, colors } = useTheme();
+  const dispatch = useAppDispatch();
+
+  const likeCount = Number(post.likeCount) || 0;
+  const commentCount = Number(post.commentCount) || 0;
+  const isLiked = Boolean(post.isLiked);
 
   const mediaUrls = useMemo(() => (post.mediaUrls || []).filter(Boolean).slice(0, 5), [post.mediaUrls]);
   const carouselRef = useRef<ScrollView | null>(null);
@@ -163,32 +270,25 @@ function OpinionCard({ post }: { post: ApiPost }) {
             </View>
           </View>
 
-          <View style={[styles.sentimentBadge, (post.sentiment || 'neutral') === 'neutral'
-            ? { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(148, 163, 184, 0.12)', borderColor: colors.border }
-            : bullish
-              ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
-              : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' }
-          ]}>
-            {(post.sentiment || 'neutral') === 'neutral' ? (
-              <TrendingUp size={15} color={colors.textSecondary} strokeWidth={2.4} />
-            ) : bullish ? (
-              <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
-            ) : (
-              <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
-            )}
-            <Text
+          {showSentiment ? (
+            <View
               style={[
-                styles.sentimentText,
-                (post.sentiment || 'neutral') === 'neutral'
-                  ? { color: colors.textSecondary }
-                  : bullish
-                    ? { color: colors.bullish }
-                    : { color: colors.bearish },
+                styles.sentimentBadge,
+                bullish
+                  ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
+                  : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' },
               ]}
             >
-              {(post.sentiment || 'neutral').toUpperCase()}
-            </Text>
-          </View>
+              {bullish ? (
+                <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
+              ) : (
+                <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
+              )}
+              <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>
+                {sentiment.toUpperCase()}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={[styles.postContent, { color: colors.text }]}>
@@ -253,21 +353,45 @@ function OpinionCard({ post }: { post: ApiPost }) {
         )}
 
         <View style={[styles.engagementRow, { borderTopColor: colors.border }]}>
-          <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <Heart size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
+          <TouchableOpacity
+            style={styles.engagementItem}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (isLiked) dispatch(unlikePost({ postId: post._id }));
+              else dispatch(likePost({ postId: post._id }));
+            }}
+          >
+            <Heart
+              size={18}
+              color={isLiked ? colors.bearish : colors.textSecondary}
+              fill={isLiked ? colors.bearish : 'transparent'}
+              strokeWidth={2.2}
+            />
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{likeCount}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.engagementItem}
+            activeOpacity={0.8}
+            onPress={() => onOpenComments(post._id)}
+          >
             <MessageCircle size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{commentCount}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.engagementItem}
+            activeOpacity={0.8}
+            onPress={async () => {
+              try {
+                const media = Array.isArray(post.mediaUrls) ? post.mediaUrls.filter(Boolean) : [];
+                const firstUrl = media.length ? `\n${media[0]}` : '';
+                await Share.share({ message: `${post.content}${firstUrl}` });
+              } catch {
+                // ignore
+              }
+            }}
+          >
             <Share2 size={18} color={colors.textSecondary} strokeWidth={2.2} />
             <Text style={[styles.engagementText, { color: colors.textSecondary }]}>0</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.engagementItem} activeOpacity={0.8}>
-            <Bookmark size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>Save</Text>
           </TouchableOpacity>
         </View>
 
@@ -458,12 +582,66 @@ const styles = StyleSheet.create({
     gap: 10,
     overflow: 'hidden',
   },
+  notifButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   searchInput: {
     flex: 1,
     color: '#E2E8F0',
     fontSize: 14,
     fontWeight: '600',
     paddingVertical: 0,
+  },
+  userResultsCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  userResultsHint: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  userRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+  },
+  userAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  userAvatarFallback: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  userName: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  userHandle: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '700',
   },
   feedIntroCard: {
     backgroundColor: 'rgba(15, 23, 42, 0.72)',

@@ -35,6 +35,24 @@ const postSchema = new Schema(
       default: [],
       index: true,
     },
+
+    // Engagement (persisted)
+    likedBy: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+      select: false,
+    },
+    likeCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    commentCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,

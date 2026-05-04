@@ -31,6 +31,8 @@ export async function setupNotifications() {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
       }),
@@ -53,6 +55,9 @@ export function scheduleLocalNotification(
       body,
       data: { data: 'goes here' },
     },
-    trigger: { seconds: delay },
+    trigger: {
+      seconds: delay,
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+    } as Notifications.TimeIntervalTriggerInput,
   });
 }

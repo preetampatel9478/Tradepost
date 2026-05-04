@@ -37,6 +37,30 @@ const userSchema = new Schema(
       type: String,
       default: '',
     },
+
+    // Social graph (persisted)
+    followers: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+      select: false,
+    },
+    following: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+      select: false,
+    },
+    followerCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    followingCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
