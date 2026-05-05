@@ -9,6 +9,23 @@ const userSchema = new Schema(
       unique: true,
       index: true,
     },
+    name: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: '',
+    },
+    bio: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 180,
+    },
     userId: {
       type: String,
       required: true,
@@ -24,6 +41,30 @@ const userSchema = new Schema(
     profilePhoto: {
       type: String,
       default: '',
+    },
+
+    // User preferences / settings
+    language: {
+      type: String,
+      default: 'en',
+      trim: true,
+    },
+    accountPrivate: {
+      type: Boolean,
+      default: false,
+    },
+    notifyPush: {
+      type: Boolean,
+      default: true,
+    },
+    notifyEmail: {
+      type: Boolean,
+      default: false,
+    },
+    themeMode: {
+      type: String,
+      enum: ['light', 'dark', 'system'],
+      default: 'system',
     },
     tc_accepted: {
       type: Boolean,

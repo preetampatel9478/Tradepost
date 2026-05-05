@@ -7,7 +7,16 @@ export function getApiErrorMessage(error: unknown): string {
 
   // No response means network / CORS / server down
   if (!error.response) {
-    return 'Cannot reach server. Check API URL / network and try again.';
+    const baseURL = (error.config as any)?.baseURL;
+    const path = (error.config as any)?.url;
+    const method = (error.config as any)?.method;
+
+    const parts: string[] = ['Cannot reach server. Check API URL / network and try again.'];
+    if (baseURL || path) {
+      const full = `${String(baseURL || '').replace(/\/+$/, '')}${String(path || '')}`;
+      parts.push(`Request: ${(method || 'GET').toUpperCase()} ${full}`);
+    }
+    return parts.join('\n');
   }
 
   const data: any = error.response.data;

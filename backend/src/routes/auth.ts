@@ -9,7 +9,7 @@ const router = express.Router();
 
 router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, next) => {
   try {
-    const { mobileNumber, userId, password, tc_accepted, tc_device } = req.body;
+    const { mobileNumber, userId, password, tc_accepted, tc_device, name, email } = req.body;
     if (!mobileNumber?.trim()) return next(createError(400, 'Mobile Number is required'));
     if (!userId?.trim()) return next(createError(400, 'User ID is required'));
     if (!password || String(password).length < 6) return next(createError(400, 'Password must be at least 6 characters'));
@@ -25,6 +25,8 @@ router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, n
     const user = new User({
       mobileNumber,
       userId,
+      name: String(name || userId || '').trim(),
+      email: String(email || '').trim().toLowerCase(),
       passwordHash,
       profilePhoto,
       tc_accepted: tc_accepted === true || tc_accepted === 'true',
@@ -37,8 +39,11 @@ router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, n
       user: {
         id: user._id,
         userId: user.userId,
+        name: (user as any).name || '',
+        email: (user as any).email || '',
         mobileNumber: user.mobileNumber,
         avatar: user.profilePhoto,
+        bio: (user as any).bio || '',
         createdAt: user.createdAt,
       },
       token,
@@ -64,8 +69,11 @@ router.post('/login', async (req, res, next) => {
       user: {
         id: user._id,
         userId: user.userId,
+        name: (user as any).name || '',
+        email: (user as any).email || '',
         mobileNumber: user.mobileNumber,
         avatar: user.profilePhoto,
+        bio: (user as any).bio || '',
         createdAt: user.createdAt,
       },
       token,

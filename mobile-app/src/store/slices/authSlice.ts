@@ -7,6 +7,7 @@ interface User {
   userId?: string;
   mobileNumber?: string;
   avatar?: string; // profile photo URL
+  bio?: string;
   createdAt?: string; // signup time (ISO)
   isVerified?: boolean;
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   Image,
@@ -28,17 +28,24 @@ import {
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../hooks/reduxHooks';
 import ProfileModal from '../components/common/ProfileModal';
+import PublicProfileModal from '../components/common/PublicProfileModal';
 import { CommentsModal } from '../components/common/CommentsModal';
+import NotificationsModal from '../components/common/NotificationsModal';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchPosts, likePost, patchPostEngagement, type ApiPost, unlikePost } from '../store/slices/postSlice';
 import { disconnectSocket, getAuthedSocket } from '../services/socket';
 import api from '../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [commentsForPostId, setCommentsForPostId] = useState<string | null>(null);
+  const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
+  const [publicProfileVisible, setPublicProfileVisible] = useState(false);
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'Trader';
   const userAvatar = user?.avatar;
@@ -46,6 +53,22 @@ export default function HomeScreen() {
   const currentUserVerified = user?.isVerified ?? false;
   const postsState = useAppSelector((state) => state.posts);
   const { theme, colors } = useTheme();
+
+  const refreshUnreadNotifications = useCallback(async () => {
+    try {
+      const res = await api.get('/notifications/unread-count');
+      setUnreadNotifications(Number(res.data?.unread ?? 0));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshUnreadNotifications();
+      return () => undefined;
+    }, [refreshUnreadNotifications])
+  );
 
   useEffect(() => {
     dispatch(fetchPosts());
@@ -60,9 +83,14 @@ export default function HomeScreen() {
         const handler = (payload: { postId: string; likeCount: number; commentCount: number }) => {
           dispatch(patchPostEngagement(payload));
         };
+        const notifHandler = () => {
+          refreshUnreadNotifications();
+        };
         socket.on('posts:engagementUpdated', handler);
+        socket.on('notifications:new', notifHandler);
         socketCleanup = () => {
           socket.off('posts:engagementUpdated', handler);
+          socket.off('notifications:new', notifHandler);
         };
       } catch {
         // ignore
@@ -73,7 +101,7 @@ export default function HomeScreen() {
       socketCleanup?.();
       disconnectSocket();
     };
-  }, [dispatch]);
+  }, [dispatch, refreshUnreadNotifications]);
 
   const posts: ApiPost[] = postsState.posts as ApiPost[];
 
@@ -103,6 +131,13 @@ export default function HomeScreen() {
 
     return () => clearTimeout(t);
   }, [userQuery]);
+
+  const openPublicProfile = (userId: string | undefined) => {
+    const trimmed = String(userId || '').trim();
+    if (!trimmed) return;
+    setPublicProfileUserId(trimmed);
+    setPublicProfileVisible(true);
+  };
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -146,11 +181,16 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             style={[styles.notifButton, { backgroundColor: colors.searchBg, borderColor: colors.border }]}
-            onPress={() => null}
+            onPress={() => setNotificationsVisible(true)}
             accessibilityRole="button"
             accessibilityLabel="Notifications"
           >
             <Bell size={20} color={colors.textSecondary} strokeWidth={2.2} />
+            {unreadNotifications > 0 ? (
+              <View style={[styles.notifBadge, { backgroundColor: colors.bearish, borderColor: colors.card }]}>
+                <Text style={styles.notifBadgeText}>{unreadNotifications > 99 ? '99+' : String(unreadNotifications)}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
 
@@ -160,7 +200,12 @@ export default function HomeScreen() {
               <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>Searching…</Text>
             ) : null}
             {userResults.map((u) => (
-              <View key={u._id} style={[styles.userRow, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                key={u._id}
+                activeOpacity={0.85}
+                style={[styles.userRow, { borderTopColor: colors.border }]}
+                onPress={() => openPublicProfile(u.userId)}
+              >
                 <View style={[styles.userAvatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
                   {u.profilePhoto ? (
                     <Image source={{ uri: u.profilePhoto }} style={styles.userAvatarImg} />
@@ -174,7 +219,7 @@ export default function HomeScreen() {
                   <Text style={[styles.userName, { color: colors.text }]}>{u.userId}</Text>
                   <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@{u.userId}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         ) : null}
@@ -193,11 +238,26 @@ export default function HomeScreen() {
         ) : null}
 
         {posts.map((post: ApiPost) => (
-          <OpinionCard key={post._id} post={post} onOpenComments={(postId) => setCommentsForPostId(postId)} />
+          <OpinionCard
+            key={post._id}
+            post={post}
+            onOpenComments={(postId) => setCommentsForPostId(postId)}
+            onOpenProfile={(userId) => openPublicProfile(userId)}
+          />
         ))}
 
       </ScrollView>
       <ProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} />
+      <NotificationsModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+        onMarkedRead={() => setUnreadNotifications(0)}
+      />
+      <PublicProfileModal
+        visible={publicProfileVisible}
+        userId={publicProfileUserId}
+        onClose={() => setPublicProfileVisible(false)}
+      />
       <CommentsModal
         visible={Boolean(commentsForPostId)}
         postId={commentsForPostId}
@@ -207,7 +267,15 @@ export default function HomeScreen() {
   );
 }
 
-function OpinionCard({ post, onOpenComments }: { post: ApiPost; onOpenComments: (postId: string) => void }) {
+function OpinionCard({
+  post,
+  onOpenComments,
+  onOpenProfile,
+}: {
+  post: ApiPost;
+  onOpenComments: (postId: string) => void;
+  onOpenProfile: (userId: string) => void;
+}) {
   const sentiment = post.sentiment || 'neutral';
   const bullish = sentiment === 'bullish';
   const showSentiment = sentiment === 'bullish' || sentiment === 'bearish';
@@ -226,6 +294,7 @@ function OpinionCard({ post, onOpenComments }: { post: ApiPost; onOpenComments: 
   const displayName = useMemo(() => post.author?.userId || 'Trader', [post.author?.userId]);
   const handle = useMemo(() => (post.author?.userId ? `@${post.author.userId}` : '@trader'), [post.author?.userId]);
   const avatarUrl = post.author?.profilePhoto;
+  const authorUserId = post.author?.userId;
   const createdAt = useMemo(() => {
     const d = new Date(post.createdAt);
     if (Number.isNaN(d.getTime())) return '';
@@ -253,7 +322,11 @@ function OpinionCard({ post, onOpenComments }: { post: ApiPost; onOpenComments: 
     <View style={[styles.cardShell, theme === 'light' && styles.cardLightShadow]}>
       <BlurView intensity={theme === 'light' ? 0 : 22} tint={theme === 'light' ? "light" : "dark"} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: theme === 'light' ? 0 : 1 }]}>
         <View style={styles.cardTopRow}>
-          <View style={styles.identityRow}>
+          <TouchableOpacity
+            style={styles.identityRow}
+            activeOpacity={0.85}
+            onPress={() => (authorUserId ? onOpenProfile(authorUserId) : null)}
+          >
             <View style={[styles.cardAvatarWrap, { borderColor: colors.border }]}>
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={styles.cardAvatarImage} />
@@ -268,7 +341,7 @@ function OpinionCard({ post, onOpenComments }: { post: ApiPost; onOpenComments: 
               <Text style={[styles.cardName, { color: colors.text }]}>{displayName}</Text>
               <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>{handle}{createdAt ? ` · ${createdAt}` : ''}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
           {showSentiment ? (
             <View
@@ -589,6 +662,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
   },
   searchInput: {
     flex: 1,

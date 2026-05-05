@@ -1,5 +1,8 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Post from '../models/Post';
+import Comment from '../models/Comment';
+import Notification from '../models/Notification';
 import { auth, optionalAuth, type AuthenticatedRequest } from '../middlewares/auth';
 import { createError } from '../middlewares/errorHandler';
 import { uploadPostMedia, buildPublicFileUrl } from '../config/upload';
@@ -9,6 +12,15 @@ function emitPostEngagementUpdated(postId: string, likeCount: number, commentCou
   try {
     const io = getIO();
     io.emit('posts:engagementUpdated', { postId, likeCount, commentCount });
+  } catch {
+    // Socket not initialized; ignore.
+  }
+}
+
+function emitNotificationNew(recipientId: string) {
+  try {
+    const io = getIO();
+    io.to(`user:${recipientId}`).emit('notifications:new', { recipientId });
   } catch {
     // Socket not initialized; ignore.
   }
@@ -122,6 +134,17 @@ router.post('/:postId/like', auth, async (req: AuthenticatedRequest, res, next) 
       });
     }
 
+    // Create notification for post author (if not self).
+    const authorId = String((updated as any)?.author?._id ?? (updated as any)?.author ?? '');
+    if (authorId && String(authorId) !== String(req.userId)) {
+      await Notification.findOneAndUpdate(
+        { recipient: authorId, actor: req.userId, type: 'like', post: updated._id },
+        { $set: { read: false, readAt: null } },
+        { upsert: true, new: true }
+      );
+      emitNotificationNew(authorId);
+    }
+
     emitPostEngagementUpdated(String(updated._id), updated.likeCount ?? 0, updated.commentCount ?? 0);
     return res.json({ ...updated.toObject(), isLiked: true });
   } catch (err) {
@@ -152,10 +175,81 @@ router.delete('/:postId/like', auth, async (req: AuthenticatedRequest, res, next
       });
     }
 
+    // Remove the corresponding like notification (if any).
+    const authorId = String((updated as any)?.author?._id ?? (updated as any)?.author ?? '');
+    if (authorId && String(authorId) !== String(req.userId)) {
+      await Notification.deleteMany({ recipient: authorId, actor: req.userId, type: 'like', post: updated._id });
+      emitNotificationNew(authorId);
+    }
+
     const likeCount = Math.max(0, updated.likeCount ?? 0);
     const commentCount = updated.commentCount ?? 0;
     emitPostEngagementUpdated(String(updated._id), likeCount, commentCount);
     return res.json({ ...updated.toObject(), isLiked: false, likeCount });
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
+
+// Update a post (author-only)
+router.put('/:postId', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+
+    const { postId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(postId)) return next(createError(400, 'Invalid postId'));
+
+    const { content, sentiment, mediaUrls } = req.body as {
+      content?: string;
+      sentiment?: 'bullish' | 'bearish' | 'neutral';
+      mediaUrls?: string[];
+    };
+
+    const update: any = {};
+
+    if (typeof content === 'string') {
+      const trimmed = content.trim();
+      if (!trimmed) return next(createError(400, 'Post content is required'));
+      update.content = trimmed;
+      update.mentions = extractTokens(trimmed, '@');
+      update.tags = extractTokens(trimmed, '#');
+    }
+
+    if (typeof sentiment === 'string') {
+      if (!['bullish', 'bearish', 'neutral'].includes(sentiment)) return next(createError(400, 'Invalid sentiment'));
+      update.sentiment = sentiment;
+    }
+
+    if (Array.isArray(mediaUrls)) {
+      update.mediaUrls = mediaUrls.filter((u) => typeof u === 'string' && u.trim()).slice(0, 5);
+    }
+
+    const updated = await Post.findOneAndUpdate({ _id: postId, author: req.userId }, update, { new: true }).populate(
+      'author',
+      'userId profilePhoto'
+    );
+    if (!updated) return next(createError(404, 'Post not found'));
+
+    return res.json(updated);
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
+
+// Delete a post (author-only)
+router.delete('/:postId', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+
+    const { postId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(postId)) return next(createError(400, 'Invalid postId'));
+
+    const deleted = await Post.findOneAndDelete({ _id: postId, author: req.userId }).select('_id');
+    if (!deleted) return next(createError(404, 'Post not found'));
+
+    await Comment.deleteMany({ post: postId });
+
+    return res.json({ success: true, postId });
   } catch (err) {
     return next(createError(500, 'Server error'));
   }

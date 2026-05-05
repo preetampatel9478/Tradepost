@@ -42,10 +42,12 @@ export default function LoginScreen({ navigation }: any) {
       dispatch(
         setUser({
           id: user.id,
-          name: user.userId,
+          name: user.name || user.userId,
           userId: user.userId,
           mobileNumber: user.mobileNumber,
           avatar: user.avatar,
+          email: user.email,
+          bio: user.bio,
           createdAt: user.createdAt,
           isVerified: false,
         })

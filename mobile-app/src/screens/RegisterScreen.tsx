@@ -149,11 +149,12 @@ export default function RegisterScreen({ navigation }: any) {
       dispatch(
         setUser({
           id: user.id,
-          email: email.trim() || undefined,
-          name: user.userId,
+          email: user.email || email.trim() || undefined,
+          name: user.name || user.userId,
           userId: user.userId,
           mobileNumber: user.mobileNumber,
           avatar: user.avatar,
+          bio: user.bio,
           createdAt: user.createdAt,
           isVerified: false,
         })

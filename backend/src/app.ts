@@ -19,6 +19,7 @@ import stockRoutes from './routes/stocks';
 import chatRoutes from './routes/chat';
 import newsRoutes from './routes/news';
 import verificationRoutes from './routes/verification';
+import notificationRoutes from './routes/notifications';
 
 const app: Express = express();
 
@@ -69,6 +70,7 @@ app.use('/api/stocks', stockRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/verification', verificationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // ========== 404 Handler ==========
 app.use((req: Request, res: Response) => {

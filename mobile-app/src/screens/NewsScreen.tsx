@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { X, TrendingUp, TrendingDown, Info } from 'lucide-react-native';
 import { useAppDispatch } from '../hooks/reduxHooks';
@@ -46,9 +47,25 @@ export default function ComposePostScreen({ navigation }: any) {
   const thumbGap = 10;
   const thumbSize = Math.floor((contentWidth - thumbGap * 2) / 3);
   
-  const { control, handleSubmit, watch, formState: { errors } } = useForm<PostFormData>({
+  const { control, handleSubmit, watch, reset, formState: { errors } } = useForm<PostFormData>({
     defaultValues: { opinion: '' }
   });
+
+  const resetDraft = useCallback(() => {
+    reset({ opinion: '' });
+    setSentiment(null);
+    setAttachedMedia([]);
+    setIsPosting(false);
+  }, [reset]);
+
+  // Tabs keep screens mounted by default; clear draft when leaving this screen.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        resetDraft();
+      };
+    }, [resetDraft])
+  );
 
   const opinionValue = watch('opinion');
   const isPostDisabled = !opinionValue.trim() || isPosting;
@@ -120,7 +137,7 @@ export default function ComposePostScreen({ navigation }: any) {
       const mediaUrls = await uploadAttachedMedia();
       await dispatch(createPost({ content: data.opinion.trim(), sentiment: apiSentiment, mediaUrls })).unwrap();
       Alert.alert('Success', 'Your opinion has been published!');
-      setAttachedMedia([]);
+      resetDraft();
       navigation?.navigate?.('Home');
     } catch (error) {
       Alert.alert('Post Failed', getApiErrorMessage(error));

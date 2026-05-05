@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Comment from '../models/Comment';
 import Post from '../models/Post';
+import Notification from '../models/Notification';
 import { auth, type AuthenticatedRequest } from '../middlewares/auth';
 import { createError } from '../middlewares/errorHandler';
 import { getIO } from '../config/socket';
@@ -12,6 +13,15 @@ function emitPostEngagementUpdated(postId: string, likeCount: number, commentCou
 	try {
 		const io = getIO();
 		io.emit('posts:engagementUpdated', { postId, likeCount, commentCount });
+	} catch {
+		// Socket not initialized; ignore.
+	}
+}
+
+function emitNotificationNew(recipientId: string) {
+	try {
+		const io = getIO();
+		io.to(`user:${recipientId}`).emit('notifications:new', { recipientId });
 	} catch {
 		// Socket not initialized; ignore.
 	}
@@ -37,8 +47,8 @@ router.post('/', auth, async (req: AuthenticatedRequest, res, next) => {
 			parentComment = String(parent._id);
 		}
 
-		const postExists = await Post.exists({ _id: postId });
-		if (!postExists) return next(createError(404, 'Post not found'));
+		const post = await Post.findById(postId).select('author');
+		if (!post) return next(createError(404, 'Post not found'));
 
 		const comment = await Comment.create({
 			post: postId,
@@ -56,6 +66,22 @@ router.post('/', auth, async (req: AuthenticatedRequest, res, next) => {
 		const likeCount = updatedPost?.likeCount ?? 0;
 		const commentCount = updatedPost?.commentCount ?? 0;
 		emitPostEngagementUpdated(String(postId), likeCount, commentCount);
+
+		// Create notification for post author (if not self).
+		const authorId = String((post as any).author || '');
+		if (authorId && String(authorId) !== String(req.userId)) {
+			const snippet = content.trim().slice(0, 140);
+			await Notification.create({
+				recipient: authorId,
+				actor: req.userId,
+				type: 'comment',
+				post: postId,
+				comment: comment._id,
+				message: snippet,
+				read: false,
+			});
+			emitNotificationNew(authorId);
+		}
 
 		const populated = await comment.populate('author', 'userId profilePhoto');
 		return res.status(201).json({
