@@ -23,6 +23,10 @@ import notificationRoutes from './routes/notifications';
 
 const app: Express = express();
 
+// If the app is behind a reverse proxy (Docker, nginx, load balancer), this ensures
+// `req.ip` is derived correctly from `X-Forwarded-For`.
+app.set('trust proxy', 1);
+
 // ========== Security Middleware ==========
 app.use(helmet());
 app.use(cors({
@@ -33,13 +37,22 @@ app.use(cors({
 }));
 
 // ========== Rate Limiting ==========
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
-});
+// Avoid blocking local development (Expo tends to generate lots of API requests).
+// Keep protection in production.
+if (process.env.NODE_ENV === 'production') {
+  const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+  const max = Number(process.env.RATE_LIMIT_MAX) || 300;
 
-app.use('/api/', limiter);
+  const limiter = rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again later.'
+  });
+
+  app.use('/api/', limiter);
+}
 
 // ========== Body Parser ==========
 app.use(express.json({ limit: '10mb' }));

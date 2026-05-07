@@ -99,6 +99,16 @@ export interface PostState {
   error: string | null;
 }
 
+function sortPostsNewestFirst(posts: ApiPost[]): ApiPost[] {
+  return [...posts].sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    const safeATime = Number.isFinite(aTime) ? aTime : 0;
+    const safeBTime = Number.isFinite(bTime) ? bTime : 0;
+    return safeBTime - safeATime;
+  });
+}
+
 const initialState: PostState = {
   posts: [],
   isLoading: false,
@@ -111,7 +121,7 @@ const postSlice = createSlice({
   reducers: {
     setLoading: (state) => { state.isLoading = true; },
     setPosts: (state, action: PayloadAction<ApiPost[]>) => {
-      state.posts = action.payload;
+      state.posts = sortPostsNewestFirst(action.payload);
       state.isLoading = false;
     },
     addPost: (state, action: PayloadAction<ApiPost>) => {
@@ -151,7 +161,7 @@ const postSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchPosts.fulfilled, (state, action) => {
-        state.posts = action.payload;
+        state.posts = sortPostsNewestFirst(action.payload);
         state.isLoading = false;
       })
       .addCase(fetchPosts.rejected, (state, action) => {

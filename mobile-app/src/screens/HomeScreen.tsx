@@ -35,11 +35,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { fetchPosts, likePost, patchPostEngagement, type ApiPost, unlikePost } from '../store/slices/postSlice';
 import { disconnectSocket, getAuthedSocket } from '../services/socket';
 import api from '../services/api';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const feedScrollRef = useRef<ScrollView | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -53,6 +55,20 @@ export default function HomeScreen() {
   const currentUserVerified = user?.isVerified ?? false;
   const postsState = useAppSelector((state) => state.posts);
   const { theme, colors } = useTheme();
+
+  const isLoadingRef = useRef(false);
+  useEffect(() => {
+    isLoadingRef.current = postsState.isLoading;
+  }, [postsState.isLoading]);
+
+  const scrollFeedToTop = useCallback((animated: boolean) => {
+    feedScrollRef.current?.scrollTo({ y: 0, animated });
+  }, []);
+
+  const refreshFeed = useCallback(() => {
+    if (isLoadingRef.current) return;
+    dispatch(fetchPosts());
+  }, [dispatch]);
 
   const refreshUnreadNotifications = useCallback(async () => {
     try {
@@ -71,8 +87,19 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    dispatch(fetchPosts());
-  }, [dispatch]);
+    // Initial load
+    refreshFeed();
+  }, [refreshFeed]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('tabPress', () => {
+      scrollFeedToTop(true);
+      refreshUnreadNotifications();
+      refreshFeed();
+    });
+
+    return unsubscribe;
+  }, [navigation, refreshFeed, refreshUnreadNotifications, scrollFeedToTop]);
 
   useEffect(() => {
     let socketCleanup: (() => void) | null = null;
@@ -147,7 +174,16 @@ export default function HomeScreen() {
       <View style={[styles.topGlow, styles.topGlowThree]} />
 
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: Math.max(insets.top, 20) }]}
+        ref={(r) => {
+          feedScrollRef.current = r;
+        }}
+        contentContainerStyle={[
+          styles.container,
+          {
+            paddingTop: Math.max(insets.top, 20),
+            paddingBottom: Math.max(insets.bottom, 16) + 110,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
