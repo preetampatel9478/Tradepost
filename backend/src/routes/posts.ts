@@ -81,7 +81,20 @@ router.post('/media', auth, uploadPostMedia.array('media', 5), async (req: Authe
 
 router.get('/', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
   try {
-    const query = Post.find()
+    const rawTag = String((req.query.tag ?? req.query.hashtag ?? '')).trim();
+    const normalizedTag = rawTag
+      ? rawTag.startsWith('#')
+        ? rawTag
+        : `#${rawTag}`
+      : '';
+
+    const filter: any = {};
+    if (normalizedTag) {
+      const safe = normalizedTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.tags = { $regex: new RegExp(`^${safe}$`, 'i') };
+    }
+
+    const query = Post.find(filter)
       .populate('author', 'userId profilePhoto')
       .sort({ createdAt: -1 })
       .limit(50);

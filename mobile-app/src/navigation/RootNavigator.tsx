@@ -11,6 +11,7 @@ import StockScreen from '../screens/StockScreen';
 import NewsScreen from '../screens/NewsScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ChatScreen from '../screens/ChatScreen';
+import TagFeedScreen from '../screens/TagFeedScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import { useTheme } from '../contexts/ThemeContext';
@@ -133,12 +134,21 @@ function AppTabs() {
   );
 }
 
+function AppStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs" component={AppTabs} />
+      <Stack.Screen name="TagFeed" component={TagFeedScreen} />
+    </Stack.Navigator>
+  );
+}
+
 export default function RootNavigator() {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
 
   return (
     <NavigationContainer>
-      {isAuthenticated ? <AppTabs /> : <AuthStack />}
+      {isAuthenticated ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 }

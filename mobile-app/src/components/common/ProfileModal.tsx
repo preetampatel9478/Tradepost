@@ -659,23 +659,29 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.panelContent}>
               {panel === 'profile' ? (
                 <>
-                  <View style={styles.rowBetween}>
+                  <View style={styles.profilePhotoSection}>
                     <Text style={[styles.fieldLabelInline, { color: colors.textSecondary }]}>Profile Photo</Text>
-                    <TouchableOpacity onPress={pickAvatar} disabled={isPickingPhoto} activeOpacity={0.85}>
+                    <View style={[styles.avatarPreview, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      {pendingAvatarUri || profileAvatar || user?.avatar ? (
+                        <Image
+                          source={{ uri: pendingAvatarUri || profileAvatar || user?.avatar }}
+                          style={styles.avatarPreviewImage}
+                        />
+                      ) : (
+                        <Text style={[styles.avatarTextLarge, { color: colors.text }]}>{initials}</Text>
+                      )}
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={pickAvatar}
+                      disabled={isPickingPhoto}
+                      activeOpacity={0.85}
+                      style={styles.profilePhotoChange}
+                    >
                       <Text style={[styles.linkText, { color: colors.verifiedBlue }]}>
                         {isPickingPhoto ? 'Opening...' : 'Change'}
                       </Text>
                     </TouchableOpacity>
-                  </View>
-                  <View style={[styles.avatarPreview, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                    {pendingAvatarUri || profileAvatar || user?.avatar ? (
-                      <Image
-                        source={{ uri: pendingAvatarUri || profileAvatar || user?.avatar }}
-                        style={styles.avatarPreviewImage}
-                      />
-                    ) : (
-                      <Text style={[styles.avatarTextLarge, { color: colors.text }]}>{initials}</Text>
-                    )}
                   </View>
 
                   <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Display Name</Text>
@@ -1540,6 +1546,13 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: 13,
     fontWeight: '800',
+  },
+  profilePhotoSection: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  profilePhotoChange: {
+    marginTop: 10,
   },
   avatarPreview: {
     width: 86,

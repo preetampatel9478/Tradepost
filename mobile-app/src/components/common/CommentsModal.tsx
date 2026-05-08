@@ -38,10 +38,12 @@ export function CommentsModal({
   visible,
   postId,
   onClose,
+  onEngagementUpdated,
 }: {
   visible: boolean;
   postId: string | null;
   onClose: () => void;
+  onEngagementUpdated?: (payload: { postId: string; likeCount?: number; commentCount?: number }) => void;
 }) {
   const dispatch = useAppDispatch();
   const { theme, colors } = useTheme();
@@ -107,6 +109,11 @@ export function CommentsModal({
     if (createComment.fulfilled.match(result)) {
       const newComment = result.payload.comment as ApiComment;
       setComments((prev) => [...prev, newComment]);
+      onEngagementUpdated?.({
+        postId,
+        likeCount: (result.payload as any)?.likeCount,
+        commentCount: (result.payload as any)?.commentCount,
+      });
       setText('');
       setReplyTo(null);
       setError(null);

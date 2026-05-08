@@ -516,6 +516,7 @@ function OpinionCard({
 
 function HighlightedText({ text }: { text: string }) {
   const { colors } = useTheme();
+  const navigation = useNavigation<any>();
 
   const tokens = useMemo(() => {
     const regex = /([@#$][A-Za-z0-9_]{1,32})/g;
@@ -536,6 +537,15 @@ function HighlightedText({ text }: { text: string }) {
               styles.highlightToken,
               { color: isMention ? colors.verifiedBlue : isStock ? colors.bearish : colors.bullish },
             ]}
+            onPress={
+              isTag
+                ? () => {
+                    const parent = navigation.getParent?.();
+                    if (parent) parent.navigate('TagFeed', { tag: token });
+                    else navigation.navigate('TagFeed', { tag: token });
+                  }
+                : undefined
+            }
           >
             {token}
           </Text>

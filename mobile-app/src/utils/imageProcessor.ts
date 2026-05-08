@@ -8,6 +8,27 @@ export interface ProcessedImage {
 }
 
 /**
+ * Prepare a stable, edit-friendly image format for the in-app editor.
+ *
+ * On some Android devices, cropping/manipulation can be unreliable when the input
+ * is WebP. We therefore keep a JPEG working copy for editing, and only convert
+ * to WebP at upload time.
+ */
+export const prepareForEditing = async (uri: string): Promise<ProcessedImage> => {
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 1200 } }],
+    { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+  );
+
+  return {
+    uri: result.uri,
+    width: result.width,
+    height: result.height,
+  };
+};
+
+/**
  * Handles picking an image from the library and automatically routing it 
  * through the compression pipeline.
  */

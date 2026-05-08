@@ -12,6 +12,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { Search } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -21,6 +22,7 @@ type TrendingTag = {
 };
 
 export default function SearchScreen() {
+  const navigation = useNavigation<any>();
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput | null>(null);
@@ -103,6 +105,11 @@ export default function SearchScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               activeOpacity={0.85}
+              onPress={() => {
+                const parent = navigation.getParent?.();
+                if (parent) parent.navigate('TagFeed', { tag: item.tag });
+                else navigation.navigate('TagFeed', { tag: item.tag });
+              }}
               style={[styles.userRow, { borderColor: colors.border, backgroundColor: colors.card }]}
             >
               <View style={{ flex: 1 }}>

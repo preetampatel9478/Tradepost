@@ -26,7 +26,7 @@ import { createPost } from '../store/slices/postSlice';
 import { getApiErrorMessage } from '../utils/apiError';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
-import { compressForProduction } from '../utils/imageProcessor';
+import { compressForProduction, prepareForEditing } from '../utils/imageProcessor';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Image as SvgImage, Path } from 'react-native-svg';
@@ -50,6 +50,9 @@ type Stroke = {
   points: NormalizedPoint[];
 };
 
+type CropRect = { x: number; y: number; width: number; height: number };
+type BoundsRect = { x: number; y: number; width: number; height: number };
+
 export default function ComposePostScreen({ navigation }: any) {
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
@@ -63,6 +66,7 @@ export default function ComposePostScreen({ navigation }: any) {
   const [editorMode, setEditorMode] = useState<'crop' | 'draw'>('crop');
   const [editorScale, setEditorScale] = useState(1);
   const [editorTranslate, setEditorTranslate] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cropRect, setCropRect] = useState<CropRect>({ x: 0, y: 0, width: 0, height: 0 });
   const [activePencilColor, setActivePencilColor] = useState<string>(colors.verifiedBlue);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -72,6 +76,13 @@ export default function ComposePostScreen({ navigation }: any) {
   const pinchStartCenterRef = useRef<{ x: number; y: number } | null>(null);
   const gestureStartScaleRef = useRef<number>(1);
   const gestureStartTranslateRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const cropDragModeRef = useRef<
+    | { type: 'none' }
+    | { type: 'move'; startX: number; startY: number; startRect: CropRect }
+    | { type: 'resize'; corner: 'tl' | 'tr' | 'bl' | 'br'; startX: number; startY: number; startRect: CropRect }
+    | { type: 'resize-edge'; edge: 'l' | 'r' | 't' | 'b'; startX: number; startY: number; startRect: CropRect }
+  >({ type: 'none' });
 
   const screenWidth = Dimensions.get('window').width;
   const contentWidth = Math.max(0, screenWidth - 40); // ScrollView content has 20px padding on each side
@@ -131,15 +142,15 @@ export default function ComposePostScreen({ navigation }: any) {
     if (result.canceled || !result.assets?.length) return;
 
     const asset = result.assets[0];
-    const processed = await compressForProduction(asset.uri);
+    const processed = await prepareForEditing(asset.uri);
     setAttachedMedia((prev) => [
       ...prev,
       {
         uri: processed.uri,
         width: processed.width,
         height: processed.height,
-        name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
-        mimeType: 'image/webp',
+        name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.jpg`,
+        mimeType: 'image/jpeg',
       },
     ].slice(0, 5));
   };
@@ -191,6 +202,7 @@ export default function ComposePostScreen({ navigation }: any) {
     setEditorTranslate({ x: 0, y: 0 });
     setEditorFrameSize({ width: 0, height: 0 });
     setEditorTargetFrame({ width: 0, height: 0 });
+    setCropRect({ x: 0, y: 0, width: 0, height: 0 });
     pinchStartDistanceRef.current = null;
     pinchStartCenterRef.current = null;
   };
@@ -221,6 +233,18 @@ export default function ComposePostScreen({ navigation }: any) {
     return { x: (a.pageX + b.pageX) / 2, y: (a.pageY + b.pageY) / 2 };
   };
 
+  const getImageBoundsContain = (frameW: number, frameH: number, imgW: number, imgH: number) => {
+    if (!frameW || !frameH || !imgW || !imgH) {
+      return { bounds: { x: 0, y: 0, width: frameW || 0, height: frameH || 0 }, scale: 1 };
+    }
+    const scale = Math.min(frameW / imgW, frameH / imgH);
+    const width = imgW * scale;
+    const height = imgH * scale;
+    const x = (frameW - width) / 2;
+    const y = (frameH - height) / 2;
+    return { bounds: { x, y, width, height }, scale };
+  };
+
   const getBaseCoverScale = (frameW: number, frameH: number, imgW: number, imgH: number) => {
     if (!frameW || !frameH || !imgW || !imgH) return 1;
     return Math.max(frameW / imgW, frameH / imgH);
@@ -247,6 +271,208 @@ export default function ComposePostScreen({ navigation }: any) {
     };
   };
 
+  const clampCropRect = (rect: CropRect, bounds: BoundsRect) => {
+    const minSize = Math.min(120, Math.max(56, Math.floor(Math.min(bounds.width, bounds.height) * 0.2)));
+    const width = clamp(rect.width, minSize, bounds.width);
+    const height = clamp(rect.height, minSize, bounds.height);
+    const x = clamp(rect.x, bounds.x, Math.max(bounds.x, bounds.x + bounds.width - width));
+    const y = clamp(rect.y, bounds.y, Math.max(bounds.y, bounds.y + bounds.height - height));
+    return { x, y, width, height };
+  };
+
+  const isInsideRect = (x: number, y: number, rect: CropRect) => {
+    return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+  };
+
+  const hitTestCorner = (x: number, y: number, rect: CropRect, radius: number) => {
+    const corners: Array<{ corner: 'tl' | 'tr' | 'bl' | 'br'; cx: number; cy: number }> = [
+      { corner: 'tl', cx: rect.x, cy: rect.y },
+      { corner: 'tr', cx: rect.x + rect.width, cy: rect.y },
+      { corner: 'bl', cx: rect.x, cy: rect.y + rect.height },
+      { corner: 'br', cx: rect.x + rect.width, cy: rect.y + rect.height },
+    ];
+
+    for (const c of corners) {
+      const dx = x - c.cx;
+      const dy = y - c.cy;
+      if (dx * dx + dy * dy <= radius * radius) return c.corner;
+    }
+    return null;
+  };
+
+  const hitTestEdge = (x: number, y: number, rect: CropRect, threshold: number) => {
+    if (!isInsideRect(x, y, rect)) return null;
+    const leftDist = Math.abs(x - rect.x);
+    const rightDist = Math.abs(x - (rect.x + rect.width));
+    const topDist = Math.abs(y - rect.y);
+    const bottomDist = Math.abs(y - (rect.y + rect.height));
+
+    const min = Math.min(leftDist, rightDist, topDist, bottomDist);
+    if (min > threshold) return null;
+    if (min === leftDist) return 'l' as const;
+    if (min === rightDist) return 'r' as const;
+    if (min === topDist) return 't' as const;
+    return 'b' as const;
+  };
+
+  const cropOverlayPanResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponderCapture: (evt) => {
+        if (editingIndex === null || isSavingEdit) return false;
+        if (editorMode !== 'crop') return false;
+        // Never steal multi-touch; leave pinch zoom to the image PanResponder.
+        if (evt.nativeEvent.touches && evt.nativeEvent.touches.length >= 2) return false;
+        if (!editorFrameSize.width || !editorFrameSize.height) return false;
+        if (!cropRect.width || !cropRect.height) return false;
+
+        // Coordinates must be frame-relative (overlay fills the whole frame).
+        const x = evt.nativeEvent.locationX;
+        const y = evt.nativeEvent.locationY;
+        const handleRadius = 28;
+        const corner = hitTestCorner(x, y, cropRect, handleRadius);
+        if (corner) return true;
+        const edge = hitTestEdge(x, y, cropRect, 22);
+        if (edge) return true;
+        return isInsideRect(x, y, cropRect);
+      },
+      onStartShouldSetPanResponder: (evt) => {
+        // Keep logic identical for platforms that don't honor capture consistently.
+        if (editingIndex === null || isSavingEdit) return false;
+        if (editorMode !== 'crop') return false;
+        if (evt.nativeEvent.touches && evt.nativeEvent.touches.length >= 2) return false;
+        if (!editorFrameSize.width || !editorFrameSize.height) return false;
+        if (!cropRect.width || !cropRect.height) return false;
+
+        const x = evt.nativeEvent.locationX;
+        const y = evt.nativeEvent.locationY;
+        const handleRadius = 28;
+        const corner = hitTestCorner(x, y, cropRect, handleRadius);
+        if (corner) return true;
+        const edge = hitTestEdge(x, y, cropRect, 22);
+        if (edge) return true;
+        return isInsideRect(x, y, cropRect);
+      },
+      onMoveShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: () => false,
+      onPanResponderGrant: (evt) => {
+        const x = evt.nativeEvent.locationX;
+        const y = evt.nativeEvent.locationY;
+        const handleRadius = 28;
+        const corner = hitTestCorner(x, y, cropRect, handleRadius);
+        if (corner) {
+          cropDragModeRef.current = { type: 'resize', corner, startX: x, startY: y, startRect: cropRect };
+          return;
+        }
+        const edge = hitTestEdge(x, y, cropRect, 22);
+        if (edge) {
+          cropDragModeRef.current = { type: 'resize-edge', edge, startX: x, startY: y, startRect: cropRect };
+          return;
+        }
+        if (isInsideRect(x, y, cropRect)) {
+          cropDragModeRef.current = { type: 'move', startX: x, startY: y, startRect: cropRect };
+          return;
+        }
+        cropDragModeRef.current = { type: 'none' };
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (editingIndex === null) return;
+        const media = attachedMedia[editingIndex];
+        if (!media) return;
+        if (!editorFrameSize.width || !editorFrameSize.height) return;
+        const frameW = editorFrameSize.width;
+        const frameH = editorFrameSize.height;
+        const { bounds } = getImageBoundsContain(frameW, frameH, media.width, media.height);
+        const mode = cropDragModeRef.current;
+        if (mode.type === 'none') return;
+
+        const dx = gestureState.dx;
+        const dy = gestureState.dy;
+
+        if (mode.type === 'move') {
+          const next = clampCropRect(
+            {
+              ...mode.startRect,
+              x: mode.startRect.x + dx,
+              y: mode.startRect.y + dy,
+            },
+            bounds
+          );
+          setCropRect(next);
+          return;
+        }
+
+        if (mode.type === 'resize') {
+          const r = mode.startRect;
+          let x = r.x;
+          let y = r.y;
+          let w = r.width;
+          let h = r.height;
+
+          if (mode.corner === 'tl') {
+            x = r.x + dx;
+            y = r.y + dy;
+            w = r.width - dx;
+            h = r.height - dy;
+          } else if (mode.corner === 'tr') {
+            y = r.y + dy;
+            w = r.width + dx;
+            h = r.height - dy;
+          } else if (mode.corner === 'bl') {
+            x = r.x + dx;
+            w = r.width - dx;
+            h = r.height + dy;
+          } else if (mode.corner === 'br') {
+            w = r.width + dx;
+            h = r.height + dy;
+          }
+
+          const normalized: CropRect = {
+            x: Math.min(x, x + w),
+            y: Math.min(y, y + h),
+            width: Math.abs(w),
+            height: Math.abs(h),
+          };
+          setCropRect(clampCropRect(normalized, bounds));
+          return;
+        }
+
+        if (mode.type === 'resize-edge') {
+          const r = mode.startRect;
+          let x = r.x;
+          let y = r.y;
+          let w = r.width;
+          let h = r.height;
+
+          if (mode.edge === 'l') {
+            x = r.x + dx;
+            w = r.width - dx;
+          } else if (mode.edge === 'r') {
+            w = r.width + dx;
+          } else if (mode.edge === 't') {
+            y = r.y + dy;
+            h = r.height - dy;
+          } else if (mode.edge === 'b') {
+            h = r.height + dy;
+          }
+
+          const normalized: CropRect = {
+            x: Math.min(x, x + w),
+            y: Math.min(y, y + h),
+            width: Math.abs(w),
+            height: Math.abs(h),
+          };
+          setCropRect(clampCropRect(normalized, bounds));
+        }
+      },
+      onPanResponderRelease: () => {
+        cropDragModeRef.current = { type: 'none' };
+      },
+      onPanResponderTerminate: () => {
+        cropDragModeRef.current = { type: 'none' };
+      },
+    });
+  }, [cropRect, editingIndex, editorFrameSize.height, editorFrameSize.width, editorMode, isSavingEdit]);
+
   const buildPathD = (points: NormalizedPoint[], width: number, height: number) => {
     if (!points.length) return '';
     const first = points[0];
@@ -260,27 +486,14 @@ export default function ComposePostScreen({ navigation }: any) {
 
   const editorPanResponder = useMemo(() => {
     return PanResponder.create({
-      onStartShouldSetPanResponder: () => editingIndex !== null && !isSavingEdit,
-      onMoveShouldSetPanResponder: () => editingIndex !== null && !isSavingEdit,
+      // No image zoom/pan. Crop is done by dragging the crop lines; draw mode captures touches for strokes.
+      onStartShouldSetPanResponder: () => editingIndex !== null && !isSavingEdit && editorMode === 'draw',
+      onMoveShouldSetPanResponder: () => editingIndex !== null && !isSavingEdit && editorMode === 'draw',
       onPanResponderGrant: (evt) => {
         if (editingIndex === null) return;
         const media = attachedMedia[editingIndex];
         if (!media) return;
         if (!editorFrameSize.width || !editorFrameSize.height) return;
-
-        gestureStartScaleRef.current = editorScale;
-        gestureStartTranslateRef.current = editorTranslate;
-
-        const touches = evt.nativeEvent.touches;
-        if (touches && touches.length >= 2) {
-          if (editorMode !== 'crop') return;
-          pinchStartDistanceRef.current = getTouchDistance(touches);
-          pinchStartCenterRef.current = getTouchCenter(touches);
-          return;
-        }
-
-        pinchStartDistanceRef.current = null;
-        pinchStartCenterRef.current = null;
 
         if (editorMode !== 'draw') return;
 
@@ -303,59 +516,6 @@ export default function ComposePostScreen({ navigation }: any) {
         const media = attachedMedia[editingIndex];
         if (!media) return;
         if (!editorFrameSize.width || !editorFrameSize.height) return;
-
-        const touches = evt.nativeEvent.touches;
-
-        if (touches && touches.length >= 2) {
-          if (editorMode !== 'crop') return;
-          const startDist = pinchStartDistanceRef.current;
-          const startCenter = pinchStartCenterRef.current;
-          if (!startDist || !startCenter) return;
-
-          const dist = getTouchDistance(touches);
-          const center = getTouchCenter(touches);
-
-          const rawScale = gestureStartScaleRef.current * (dist / startDist);
-          const nextScale = clamp(rawScale, 1, 6);
-
-          const centerDx = center.x - startCenter.x;
-          const centerDy = center.y - startCenter.y;
-          const rawTranslate = {
-            x: gestureStartTranslateRef.current.x + centerDx,
-            y: gestureStartTranslateRef.current.y + centerDy,
-          };
-
-          const nextTranslate = clampTranslateForCover(
-            editorFrameSize.width,
-            editorFrameSize.height,
-            media.width,
-            media.height,
-            nextScale,
-            rawTranslate
-          );
-
-          setEditorScale(nextScale);
-          setEditorTranslate(nextTranslate);
-          return;
-        }
-
-        // Single-touch
-        if (editorMode === 'crop') {
-          const rawTranslate = {
-            x: gestureStartTranslateRef.current.x + gestureState.dx,
-            y: gestureStartTranslateRef.current.y + gestureState.dy,
-          };
-          const nextTranslate = clampTranslateForCover(
-            editorFrameSize.width,
-            editorFrameSize.height,
-            media.width,
-            media.height,
-            editorScale,
-            rawTranslate
-          );
-          setEditorTranslate(nextTranslate);
-          return;
-        }
 
         if (editorMode === 'draw') {
           const x = clamp01(evt.nativeEvent.locationX / editorFrameSize.width);
@@ -386,8 +546,6 @@ export default function ComposePostScreen({ navigation }: any) {
     editorFrameSize.height,
     editorFrameSize.width,
     editorMode,
-    editorScale,
-    editorTranslate,
     isSavingEdit,
   ]);
 
@@ -418,14 +576,25 @@ export default function ComposePostScreen({ navigation }: any) {
     if (!media) return;
 
     const hasDrawEdits = strokes.length > 0;
-    const hasCropEdits = editorScale !== 1 || Math.abs(editorTranslate.x) > 0.5 || Math.abs(editorTranslate.y) > 0.5;
-    if (!hasDrawEdits && !hasCropEdits) {
-      closeEditor();
+    if (!editorFrameSize.width || !editorFrameSize.height) {
+      Alert.alert('Edit failed', 'Editor is not ready yet.');
       return;
     }
 
-    if (!editorFrameSize.width || !editorFrameSize.height) {
-      Alert.alert('Edit failed', 'Editor is not ready yet.');
+    const frameW0 = editorFrameSize.width;
+    const frameH0 = editorFrameSize.height;
+    const eps = 0.75;
+    const { bounds: imageBounds0 } = getImageBoundsContain(frameW0, frameH0, media.width, media.height);
+    const cropIsFullImage =
+      !(cropRect.width > 0 && cropRect.height > 0) ||
+      (Math.abs(cropRect.x - imageBounds0.x) <= eps &&
+        Math.abs(cropRect.y - imageBounds0.y) <= eps &&
+        Math.abs(cropRect.width - imageBounds0.width) <= eps &&
+        Math.abs(cropRect.height - imageBounds0.height) <= eps);
+    const hasCropEdits = editorMode === 'crop' && !cropIsFullImage;
+
+    if (!hasDrawEdits && !hasCropEdits) {
+      closeEditor();
       return;
     }
 
@@ -433,20 +602,18 @@ export default function ComposePostScreen({ navigation }: any) {
     try {
       const frameW = editorFrameSize.width;
       const frameH = editorFrameSize.height;
-      const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
-      const totalScale = baseScale * editorScale;
-      const imageRenderW = media.width * totalScale;
-      const imageRenderH = media.height * totalScale;
-      const imageX0 = (frameW - imageRenderW) / 2 + editorTranslate.x;
-      const imageY0 = (frameH - imageRenderH) / 2 + editorTranslate.y;
+      const { bounds: imageBounds, scale: totalScale } = getImageBoundsContain(frameW, frameH, media.width, media.height);
+      const imageX0 = imageBounds.x;
+      const imageY0 = imageBounds.y;
 
-      const originX = clamp((0 - imageX0) / totalScale, 0, Math.max(0, media.width - 1));
-      const originY = clamp((0 - imageY0) / totalScale, 0, Math.max(0, media.height - 1));
-      const cropW = clamp(frameW / totalScale, 1, media.width - originX);
-      const cropH = clamp(frameH / totalScale, 1, media.height - originY);
+      const cropFrame = cropRect.width && cropRect.height ? cropRect : imageBounds;
+      const originX = clamp((cropFrame.x - imageX0) / totalScale, 0, Math.max(0, media.width - 1));
+      const originY = clamp((cropFrame.y - imageY0) / totalScale, 0, Math.max(0, media.height - 1));
+      const cropW = clamp(cropFrame.width / totalScale, 1, media.width - originX);
+      const cropH = clamp(cropFrame.height / totalScale, 1, media.height - originY);
 
-      // If user only cropped (no drawing), do a true pixel crop for reliability and quality.
-      if (!strokes.length) {
+      // Crop mode: true pixel crop (box-defined).
+      if (editorMode === 'crop') {
         const cropped = await ImageManipulator.manipulateAsync(
           media.uri,
           [
@@ -462,7 +629,7 @@ export default function ComposePostScreen({ navigation }: any) {
           { compress: 1, format: ImageManipulator.SaveFormat.PNG }
         );
 
-        const processed = await compressForProduction(cropped.uri);
+        const processed = await prepareForEditing(cropped.uri);
         setAttachedMedia((prev) => {
           const next = [...prev];
           const current = next[editingIndex];
@@ -472,8 +639,8 @@ export default function ComposePostScreen({ navigation }: any) {
             uri: processed.uri,
             width: processed.width,
             height: processed.height,
-            name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
-            mimeType: 'image/webp',
+            name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.jpg`,
+            mimeType: 'image/jpeg',
           };
           return next;
         });
@@ -508,7 +675,7 @@ export default function ComposePostScreen({ navigation }: any) {
       const pngUri = `${cacheUri}opinion_edit_${Date.now()}_${Math.floor(Math.random() * 1e9)}.png`;
       await FileSystem.writeAsStringAsync(pngUri, base64, { encoding: 'base64' });
 
-      const processed = await compressForProduction(pngUri);
+      const processed = await prepareForEditing(pngUri);
       setAttachedMedia((prev) => {
         const next = [...prev];
         const current = next[editingIndex];
@@ -518,8 +685,8 @@ export default function ComposePostScreen({ navigation }: any) {
           uri: processed.uri,
           width: processed.width,
           height: processed.height,
-          name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
-          mimeType: 'image/webp',
+          name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.jpg`,
+          mimeType: 'image/jpeg',
         };
         return next;
       });
@@ -538,10 +705,12 @@ export default function ComposePostScreen({ navigation }: any) {
     const formData = new FormData();
 
     for (const media of attachedMedia.slice(0, 5)) {
+      // Convert to WebP for upload (smaller + consistent).
+      const uploadImage = await compressForProduction(media.uri);
       formData.append('media', {
-        uri: media.uri,
-        name: media.name,
-        type: media.mimeType,
+        uri: uploadImage.uri,
+        name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
+        type: 'image/webp',
       } as any);
     }
 
@@ -750,6 +919,12 @@ export default function ComposePostScreen({ navigation }: any) {
                     </TouchableOpacity>
                   </View>
 
+                  {editorMode === 'crop' ? (
+                    <Text style={[styles.cropHint, { color: colors.textSecondary }]}>
+                      Drag edges / corners (blue lines) to crop
+                    </Text>
+                  ) : null}
+
                   {editorMode === 'draw' ? (
                     <View style={styles.drawToolsRow}>
                       <View style={styles.colorRow}>
@@ -808,12 +983,15 @@ export default function ComposePostScreen({ navigation }: any) {
                       if (!width || !height) return;
                       setEditorFrameSize({ width, height });
 
-                      // When the frame becomes known, re-clamp translation.
-                      const media = attachedMedia[editingIndex];
-                      if (!media) return;
-                      setEditorTranslate((prev) =>
-                        clampTranslateForCover(width, height, media.width, media.height, editorScale, prev)
-                      );
+                      // Initialize crop box to cover the full visible image area by default
+                      // so we don't "auto-crop" anything before the user adjusts.
+                      setCropRect((prev) => {
+                        if (prev.width && prev.height) return prev;
+                        const media = attachedMedia[editingIndex];
+                        if (!media) return prev;
+                        const { bounds } = getImageBoundsContain(width, height, media.width, media.height);
+                        return clampCropRect(bounds, bounds);
+                      });
                     }}
                     {...editorPanResponder.panHandlers}
                   >
@@ -823,12 +1001,11 @@ export default function ComposePostScreen({ navigation }: any) {
                           const media = attachedMedia[editingIndex];
                           const frameW = editorFrameSize.width;
                           const frameH = editorFrameSize.height;
-                          const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
-                          const totalScale = baseScale * editorScale;
-                          const imageW = media.width * totalScale;
-                          const imageH = media.height * totalScale;
-                          const x0 = (frameW - imageW) / 2 + editorTranslate.x;
-                          const y0 = (frameH - imageH) / 2 + editorTranslate.y;
+                          const { bounds } = getImageBoundsContain(frameW, frameH, media.width, media.height);
+                          const imageW = bounds.width;
+                          const imageH = bounds.height;
+                          const x0 = bounds.x;
+                          const y0 = bounds.y;
                           return (
                             <>
                               <SvgImage
@@ -845,6 +1022,160 @@ export default function ComposePostScreen({ navigation }: any) {
                         })()}
                       </Svg>
                     ) : null}
+
+                    {/* Crop box overlay (simple adjustable rectangle) */}
+                    {editorMode === 'crop' && cropRect.width && cropRect.height ? (
+                      <View style={styles.cropOverlay} {...cropOverlayPanResponder.panHandlers}>
+                        {/* Dim outside */}
+                        <View
+                          pointerEvents="none"
+                          style={[styles.cropDim, { left: 0, top: 0, right: 0, height: cropRect.y }]}
+                        />
+                        <View
+                          pointerEvents="none"
+                          style={[
+                            styles.cropDim,
+                            {
+                              left: 0,
+                              top: cropRect.y,
+                              width: cropRect.x,
+                              height: cropRect.height,
+                            },
+                          ]}
+                        />
+                        <View
+                          pointerEvents="none"
+                          style={[
+                            styles.cropDim,
+                            {
+                              left: cropRect.x + cropRect.width,
+                              top: cropRect.y,
+                              right: 0,
+                              height: cropRect.height,
+                            },
+                          ]}
+                        />
+                        <View
+                          pointerEvents="none"
+                          style={[
+                            styles.cropDim,
+                            {
+                              left: 0,
+                              top: cropRect.y + cropRect.height,
+                              right: 0,
+                              bottom: 0,
+                            },
+                          ]}
+                        />
+
+                        {/* Actual crop box */}
+                        <View
+                          pointerEvents="none"
+                          style={[
+                            styles.cropBox,
+                            {
+                              left: cropRect.x,
+                              top: cropRect.y,
+                              width: cropRect.width,
+                              height: cropRect.height,
+                              borderColor: colors.verifiedBlue,
+                            },
+                          ]}
+                        >
+                          {/* Corner handles */}
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                left: -11,
+                                top: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                right: -11,
+                                top: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                left: -11,
+                                bottom: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                right: -11,
+                                bottom: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+
+                          {/* Edge handles (midpoints) */}
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                left: cropRect.width / 2 - 9,
+                                top: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                left: cropRect.width / 2 - 9,
+                                bottom: -11,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                left: -11,
+                                top: cropRect.height / 2 - 9,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.cropHandle,
+                              {
+                                right: -11,
+                                top: cropRect.height / 2 - 9,
+                                borderColor: colors.verifiedBlue,
+                                backgroundColor: colors.card,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ) : null}
                   </View>
 
                   {/* Hidden export surface (cropped + strokes) */}
@@ -859,12 +1190,11 @@ export default function ComposePostScreen({ navigation }: any) {
                       const exportW = Math.round(frameW * mult);
                       const exportH = Math.round(frameH * mult);
 
-                      const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
-                      const totalScale = baseScale * editorScale;
-                      const imageW = media.width * totalScale;
-                      const imageH = media.height * totalScale;
-                      const x0 = (frameW - imageW) / 2 + editorTranslate.x;
-                      const y0 = (frameH - imageH) / 2 + editorTranslate.y;
+                      const { bounds } = getImageBoundsContain(frameW, frameH, media.width, media.height);
+                      const imageW = bounds.width;
+                      const imageH = bounds.height;
+                      const x0 = bounds.x;
+                      const y0 = bounds.y;
 
                       return (
                         <Svg ref={exportSvgRef} width={exportW} height={exportH}>
@@ -1053,11 +1383,35 @@ const styles = StyleSheet.create({
   },
   modeBtnText: { fontWeight: '900', fontSize: 12 },
   drawToolsRow: { gap: 10 },
+  cropHint: { fontSize: 12, fontWeight: '700' },
   editorModalBody: { flex: 1, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   editorFullFrame: {
     borderWidth: 1,
     borderRadius: 14,
-    overflow: 'hidden',
+    overflow: 'visible',
+  },
+  cropOverlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  },
+  cropDim: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  cropBox: {
+    position: 'absolute',
+    borderWidth: 2.5,
+    borderRadius: 8,
+  },
+  cropHandle: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 2,
   },
   hiddenExportSurface: {
     position: 'absolute',
