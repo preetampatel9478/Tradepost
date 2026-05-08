@@ -3,6 +3,7 @@ import {
   StyleSheet, 
   Text, 
   View, 
+  Modal,
   Image,
   TextInput, 
   TouchableOpacity, 
@@ -12,6 +13,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  PixelRatio,
   PanResponder
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +28,7 @@ import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
 import { compressForProduction } from '../utils/imageProcessor';
 import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Image as SvgImage, Path } from 'react-native-svg';
 
 interface PostFormData {
@@ -55,11 +58,20 @@ export default function ComposePostScreen({ navigation }: any) {
   const [attachedMedia, setAttachedMedia] = useState<ComposerMedia[]>([]);
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editorPreviewSize, setEditorPreviewSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [editorFrameSize, setEditorFrameSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [editorTargetFrame, setEditorTargetFrame] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [editorMode, setEditorMode] = useState<'crop' | 'draw'>('crop');
+  const [editorScale, setEditorScale] = useState(1);
+  const [editorTranslate, setEditorTranslate] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [activePencilColor, setActivePencilColor] = useState<string>(colors.verifiedBlue);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const exportSvgRef = useRef<any>(null);
+
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const gestureStartScaleRef = useRef<number>(1);
+  const gestureStartTranslateRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const screenWidth = Dimensions.get('window').width;
   const contentWidth = Math.max(0, screenWidth - 40); // ScrollView content has 20px padding on each side
@@ -112,8 +124,8 @@ export default function ComposePostScreen({ navigation }: any) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,
-      // Crop UI (single image per pick; users can add up to 5 by repeating).
-      allowsEditing: true,
+      // We do cropping inside our full-screen editor to avoid Android gesture-navigation conflicts.
+      allowsEditing: false,
     } as any);
 
     if (result.canceled || !result.assets?.length) return;
@@ -146,16 +158,25 @@ export default function ComposePostScreen({ navigation }: any) {
     const media = attachedMedia[index];
     if (!media) return;
 
+    setEditorFrameSize({ width: 0, height: 0 });
+    // Keep the edit box smaller than the screen and match the image aspect ratio
+    // so the full image is visible by default (no unintended cropping/jitter).
+    const { width: screenW, height: screenH } = Dimensions.get('window');
+    const horizontalPadding = 32; // editor body padding (16 left + 16 right)
+    // Larger than before (closer to full-screen), but still inset to avoid gesture-nav edges.
+    const maxW = Math.max(260, Math.floor((screenW - horizontalPadding) * 0.96));
+    const maxH = Math.max(260, Math.floor(screenH * 0.7));
     const ratio = media.height / Math.max(1, media.width);
-    const maxPreviewHeight = 520;
-    let previewWidth = contentWidth;
-    let previewHeight = contentWidth * ratio;
-    if (previewHeight > maxPreviewHeight) {
-      previewHeight = maxPreviewHeight;
-      previewWidth = previewHeight / ratio;
+    let frameW = Math.floor(maxW);
+    let frameH = Math.floor(frameW * ratio);
+    if (frameH > maxH) {
+      frameH = Math.floor(maxH);
+      frameW = Math.floor(frameH / Math.max(0.0001, ratio));
     }
-
-    setEditorPreviewSize({ width: previewWidth, height: previewHeight });
+    setEditorTargetFrame({ width: frameW, height: frameH });
+    setEditorMode('crop');
+    setEditorScale(1);
+    setEditorTranslate({ x: 0, y: 0 });
     setActivePencilColor(colors.verifiedBlue);
     setStrokes([]);
     setEditingIndex(index);
@@ -165,6 +186,13 @@ export default function ComposePostScreen({ navigation }: any) {
     if (isSavingEdit) return;
     setEditingIndex(null);
     setStrokes([]);
+    setEditorMode('crop');
+    setEditorScale(1);
+    setEditorTranslate({ x: 0, y: 0 });
+    setEditorFrameSize({ width: 0, height: 0 });
+    setEditorTargetFrame({ width: 0, height: 0 });
+    pinchStartDistanceRef.current = null;
+    pinchStartCenterRef.current = null;
   };
 
   const undoLastStroke = () => {
@@ -176,6 +204,48 @@ export default function ComposePostScreen({ navigation }: any) {
   };
 
   const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+  const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
+  const getTouchDistance = (touches: any[]) => {
+    if (!touches || touches.length < 2) return 0;
+    const [a, b] = touches;
+    const dx = a.pageX - b.pageX;
+    const dy = a.pageY - b.pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getTouchCenter = (touches: any[]) => {
+    if (!touches || touches.length < 2) return { x: 0, y: 0 };
+    const [a, b] = touches;
+    return { x: (a.pageX + b.pageX) / 2, y: (a.pageY + b.pageY) / 2 };
+  };
+
+  const getBaseCoverScale = (frameW: number, frameH: number, imgW: number, imgH: number) => {
+    if (!frameW || !frameH || !imgW || !imgH) return 1;
+    return Math.max(frameW / imgW, frameH / imgH);
+  };
+
+  const clampTranslateForCover = (
+    frameW: number,
+    frameH: number,
+    imgW: number,
+    imgH: number,
+    userScale: number,
+    translate: { x: number; y: number }
+  ) => {
+    const baseScale = getBaseCoverScale(frameW, frameH, imgW, imgH);
+    const totalScale = baseScale * userScale;
+    const scaledW = imgW * totalScale;
+    const scaledH = imgH * totalScale;
+    const maxOffsetX = Math.max(0, (scaledW - frameW) / 2);
+    const maxOffsetY = Math.max(0, (scaledH - frameH) / 2);
+
+    return {
+      x: clamp(translate.x, -maxOffsetX, maxOffsetX),
+      y: clamp(translate.y, -maxOffsetY, maxOffsetY),
+    };
+  };
 
   const buildPathD = (points: NormalizedPoint[], width: number, height: number) => {
     if (!points.length) return '';
@@ -194,12 +264,30 @@ export default function ComposePostScreen({ navigation }: any) {
       onMoveShouldSetPanResponder: () => editingIndex !== null && !isSavingEdit,
       onPanResponderGrant: (evt) => {
         if (editingIndex === null) return;
-        if (!editorPreviewSize.width || !editorPreviewSize.height) return;
+        const media = attachedMedia[editingIndex];
+        if (!media) return;
+        if (!editorFrameSize.width || !editorFrameSize.height) return;
 
-        const x = clamp01(evt.nativeEvent.locationX / editorPreviewSize.width);
-        const y = clamp01(evt.nativeEvent.locationY / editorPreviewSize.height);
+        gestureStartScaleRef.current = editorScale;
+        gestureStartTranslateRef.current = editorTranslate;
+
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) {
+          if (editorMode !== 'crop') return;
+          pinchStartDistanceRef.current = getTouchDistance(touches);
+          pinchStartCenterRef.current = getTouchCenter(touches);
+          return;
+        }
+
+        pinchStartDistanceRef.current = null;
+        pinchStartCenterRef.current = null;
+
+        if (editorMode !== 'draw') return;
+
+        const x = clamp01(evt.nativeEvent.locationX / editorFrameSize.width);
+        const y = clamp01(evt.nativeEvent.locationY / editorFrameSize.height);
         const defaultStrokePx = 4;
-        const widthRatio = defaultStrokePx / editorPreviewSize.width;
+        const widthRatio = defaultStrokePx / Math.max(1, editorFrameSize.width);
 
         setStrokes((prev) => [
           ...prev,
@@ -210,25 +298,98 @@ export default function ComposePostScreen({ navigation }: any) {
           },
         ]);
       },
-      onPanResponderMove: (evt) => {
+      onPanResponderMove: (evt, gestureState) => {
         if (editingIndex === null) return;
-        if (!editorPreviewSize.width || !editorPreviewSize.height) return;
+        const media = attachedMedia[editingIndex];
+        if (!media) return;
+        if (!editorFrameSize.width || !editorFrameSize.height) return;
 
-        const x = clamp01(evt.nativeEvent.locationX / editorPreviewSize.width);
-        const y = clamp01(evt.nativeEvent.locationY / editorPreviewSize.height);
+        const touches = evt.nativeEvent.touches;
 
-        setStrokes((prev) => {
-          if (!prev.length) return prev;
-          const last = prev[prev.length - 1];
-          const updatedLast: Stroke = { ...last, points: [...last.points, { x, y }] };
-          return [...prev.slice(0, -1), updatedLast];
-        });
+        if (touches && touches.length >= 2) {
+          if (editorMode !== 'crop') return;
+          const startDist = pinchStartDistanceRef.current;
+          const startCenter = pinchStartCenterRef.current;
+          if (!startDist || !startCenter) return;
+
+          const dist = getTouchDistance(touches);
+          const center = getTouchCenter(touches);
+
+          const rawScale = gestureStartScaleRef.current * (dist / startDist);
+          const nextScale = clamp(rawScale, 1, 6);
+
+          const centerDx = center.x - startCenter.x;
+          const centerDy = center.y - startCenter.y;
+          const rawTranslate = {
+            x: gestureStartTranslateRef.current.x + centerDx,
+            y: gestureStartTranslateRef.current.y + centerDy,
+          };
+
+          const nextTranslate = clampTranslateForCover(
+            editorFrameSize.width,
+            editorFrameSize.height,
+            media.width,
+            media.height,
+            nextScale,
+            rawTranslate
+          );
+
+          setEditorScale(nextScale);
+          setEditorTranslate(nextTranslate);
+          return;
+        }
+
+        // Single-touch
+        if (editorMode === 'crop') {
+          const rawTranslate = {
+            x: gestureStartTranslateRef.current.x + gestureState.dx,
+            y: gestureStartTranslateRef.current.y + gestureState.dy,
+          };
+          const nextTranslate = clampTranslateForCover(
+            editorFrameSize.width,
+            editorFrameSize.height,
+            media.width,
+            media.height,
+            editorScale,
+            rawTranslate
+          );
+          setEditorTranslate(nextTranslate);
+          return;
+        }
+
+        if (editorMode === 'draw') {
+          const x = clamp01(evt.nativeEvent.locationX / editorFrameSize.width);
+          const y = clamp01(evt.nativeEvent.locationY / editorFrameSize.height);
+
+          setStrokes((prev) => {
+            if (!prev.length) return prev;
+            const last = prev[prev.length - 1];
+            const updatedLast: Stroke = { ...last, points: [...last.points, { x, y }] };
+            return [...prev.slice(0, -1), updatedLast];
+          });
+        }
       },
       onPanResponderTerminationRequest: () => true,
-      onPanResponderRelease: () => undefined,
-      onPanResponderTerminate: () => undefined,
+      onPanResponderRelease: () => {
+        pinchStartDistanceRef.current = null;
+        pinchStartCenterRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        pinchStartDistanceRef.current = null;
+        pinchStartCenterRef.current = null;
+      },
     });
-  }, [activePencilColor, editingIndex, editorPreviewSize.height, editorPreviewSize.width, isSavingEdit]);
+  }, [
+    activePencilColor,
+    attachedMedia,
+    editingIndex,
+    editorFrameSize.height,
+    editorFrameSize.width,
+    editorMode,
+    editorScale,
+    editorTranslate,
+    isSavingEdit,
+  ]);
 
   const renderStrokes = (renderWidth: number, renderHeight: number) => {
     return strokes
@@ -256,13 +417,72 @@ export default function ComposePostScreen({ navigation }: any) {
     const media = attachedMedia[editingIndex];
     if (!media) return;
 
-    if (!strokes.length) {
+    const hasDrawEdits = strokes.length > 0;
+    const hasCropEdits = editorScale !== 1 || Math.abs(editorTranslate.x) > 0.5 || Math.abs(editorTranslate.y) > 0.5;
+    if (!hasDrawEdits && !hasCropEdits) {
       closeEditor();
+      return;
+    }
+
+    if (!editorFrameSize.width || !editorFrameSize.height) {
+      Alert.alert('Edit failed', 'Editor is not ready yet.');
       return;
     }
 
     setIsSavingEdit(true);
     try {
+      const frameW = editorFrameSize.width;
+      const frameH = editorFrameSize.height;
+      const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
+      const totalScale = baseScale * editorScale;
+      const imageRenderW = media.width * totalScale;
+      const imageRenderH = media.height * totalScale;
+      const imageX0 = (frameW - imageRenderW) / 2 + editorTranslate.x;
+      const imageY0 = (frameH - imageRenderH) / 2 + editorTranslate.y;
+
+      const originX = clamp((0 - imageX0) / totalScale, 0, Math.max(0, media.width - 1));
+      const originY = clamp((0 - imageY0) / totalScale, 0, Math.max(0, media.height - 1));
+      const cropW = clamp(frameW / totalScale, 1, media.width - originX);
+      const cropH = clamp(frameH / totalScale, 1, media.height - originY);
+
+      // If user only cropped (no drawing), do a true pixel crop for reliability and quality.
+      if (!strokes.length) {
+        const cropped = await ImageManipulator.manipulateAsync(
+          media.uri,
+          [
+            {
+              crop: {
+                originX: Math.round(originX),
+                originY: Math.round(originY),
+                width: Math.round(cropW),
+                height: Math.round(cropH),
+              },
+            },
+          ],
+          { compress: 1, format: ImageManipulator.SaveFormat.PNG }
+        );
+
+        const processed = await compressForProduction(cropped.uri);
+        setAttachedMedia((prev) => {
+          const next = [...prev];
+          const current = next[editingIndex];
+          if (!current) return prev;
+          next[editingIndex] = {
+            ...current,
+            uri: processed.uri,
+            width: processed.width,
+            height: processed.height,
+            name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
+            mimeType: 'image/webp',
+          };
+          return next;
+        });
+
+        closeEditor();
+        return;
+      }
+
+      // Drawing path: export what user sees in the editor frame.
       const base64: string = await new Promise((resolve, reject) => {
         const svg = exportSvgRef.current;
         if (!svg || typeof svg.toDataURL !== 'function') {
@@ -280,12 +500,13 @@ export default function ComposePostScreen({ navigation }: any) {
         }
       });
 
-      if (!FileSystem.cacheDirectory) {
+      const cacheUri = FileSystem.Paths?.cache?.uri;
+      if (!cacheUri) {
         throw new Error('File system is not available.');
       }
 
-      const pngUri = `${FileSystem.cacheDirectory}opinion_edit_${Date.now()}_${Math.floor(Math.random() * 1e9)}.png`;
-      await FileSystem.writeAsStringAsync(pngUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      const pngUri = `${cacheUri}opinion_edit_${Date.now()}_${Math.floor(Math.random() * 1e9)}.png`;
+      await FileSystem.writeAsStringAsync(pngUri, base64, { encoding: 'base64' });
 
       const processed = await compressForProduction(pngUri);
       setAttachedMedia((prev) => {
@@ -440,7 +661,7 @@ export default function ComposePostScreen({ navigation }: any) {
                     <Image
                       source={{ uri: m.uri }}
                       style={styles.previewImage}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                     <TouchableOpacity
                       onPress={() => openEditorForIndex(idx)}
@@ -466,110 +687,204 @@ export default function ComposePostScreen({ navigation }: any) {
             </View>
           )}
 
-          {editingIndex !== null && attachedMedia[editingIndex] ? (
-            <View style={[styles.editorWrap, { borderColor: colors.border, backgroundColor: colors.card }]}> 
-              <View style={styles.editorHeaderRow}>
-                <Text style={[styles.editorTitle, { color: colors.text }]}>Edit image</Text>
-                <TouchableOpacity onPress={closeEditor} disabled={isSavingEdit} activeOpacity={0.85}>
-                  <Text style={[styles.editorLink, { color: colors.textSecondary }]}>Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.editorToolbar}>
-                <View style={styles.colorRow}>
-                  {editorColors.map((c) => (
-                    <TouchableOpacity
-                      key={c}
-                      onPress={() => setActivePencilColor(c)}
-                      style={[
-                        styles.colorDot,
-                        {
-                          backgroundColor: c,
-                          borderColor: activePencilColor === c ? colors.verifiedBlue : colors.border,
-                        },
-                      ]}
-                      activeOpacity={0.85}
-                      disabled={isSavingEdit}
-                    />
-                  ))}
-                </View>
-
-                <View style={styles.editorActionsRow}>
-                  <TouchableOpacity
-                    onPress={undoLastStroke}
-                    style={[styles.editorActionBtn, { borderColor: colors.border }]}
-                    activeOpacity={0.85}
-                    disabled={isSavingEdit || strokes.length === 0}
-                  >
-                    <Text style={[styles.editorActionText, { color: colors.textSecondary }]}>Undo</Text>
+          {/* Full-screen editor modal */}
+          <Modal
+            visible={editingIndex !== null && !!attachedMedia[editingIndex]}
+            animationType="slide"
+            presentationStyle="fullScreen"
+            onRequestClose={closeEditor}
+          >
+            {editingIndex !== null && attachedMedia[editingIndex] ? (
+              <SafeAreaView style={[styles.editorModalContainer, { backgroundColor: colors.background }]}>
+                <View style={[styles.editorModalHeader, { borderBottomColor: colors.border }]}>
+                  <TouchableOpacity onPress={closeEditor} disabled={isSavingEdit} activeOpacity={0.85}>
+                    <Text style={[styles.editorModalHeaderText, { color: colors.text }]}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={clearStrokes}
-                    style={[styles.editorActionBtn, { borderColor: colors.border }]}
-                    activeOpacity={0.85}
-                    disabled={isSavingEdit || strokes.length === 0}
-                  >
-                    <Text style={[styles.editorActionText, { color: colors.textSecondary }]}>Clear</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={exportCurrentEdit}
-                    style={[styles.editorSaveBtn, { backgroundColor: colors.verifiedBlue }]}
-                    activeOpacity={0.85}
-                    disabled={isSavingEdit}
-                  >
+                  <Text style={[styles.editorModalTitle, { color: colors.text }]}>Edit image</Text>
+                  <TouchableOpacity onPress={exportCurrentEdit} disabled={isSavingEdit} activeOpacity={0.85}>
                     {isSavingEdit ? (
-                      <ActivityIndicator size="small" color="#FFF" />
+                      <ActivityIndicator size="small" color={colors.verifiedBlue} />
                     ) : (
-                      <Text style={styles.editorSaveText}>Done</Text>
+                      <Text style={[styles.editorModalHeaderText, { color: colors.verifiedBlue }]}>Done</Text>
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
 
-              {/* Preview (draw directly on this) */}
-              <View style={styles.editorPreviewOuter}>
-                <View
-                  style={[
-                    styles.editorPreview,
-                    {
-                      width: editorPreviewSize.width,
-                      height: editorPreviewSize.height,
-                      borderColor: colors.border,
-                      backgroundColor: colors.background,
-                    },
-                  ]}
-                  {...editorPanResponder.panHandlers}
-                >
-                  <Svg width={editorPreviewSize.width} height={editorPreviewSize.height}>
-                    <SvgImage
-                      href={{ uri: attachedMedia[editingIndex].uri }}
-                      width={editorPreviewSize.width}
-                      height={editorPreviewSize.height}
-                      preserveAspectRatio="xMidYMid slice"
-                    />
-                    {renderStrokes(editorPreviewSize.width, editorPreviewSize.height) as any}
-                  </Svg>
+                <View style={styles.editorModalToolbar}>
+                  <View style={[styles.modeRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <TouchableOpacity
+                      onPress={() => setEditorMode('crop')}
+                      style={[
+                        styles.modeBtn,
+                        editorMode === 'crop' && { backgroundColor: colors.verifiedBlue },
+                      ]}
+                      activeOpacity={0.85}
+                      disabled={isSavingEdit}
+                    >
+                      <Text
+                        style={[
+                          styles.modeBtnText,
+                          { color: editorMode === 'crop' ? '#FFFFFF' : colors.textSecondary },
+                        ]}
+                      >
+                        Crop
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setEditorMode('draw')}
+                      style={[
+                        styles.modeBtn,
+                        editorMode === 'draw' && { backgroundColor: colors.verifiedBlue },
+                      ]}
+                      activeOpacity={0.85}
+                      disabled={isSavingEdit}
+                    >
+                      <Text
+                        style={[
+                          styles.modeBtnText,
+                          { color: editorMode === 'draw' ? '#FFFFFF' : colors.textSecondary },
+                        ]}
+                      >
+                        Draw
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {editorMode === 'draw' ? (
+                    <View style={styles.drawToolsRow}>
+                      <View style={styles.colorRow}>
+                        {editorColors.map((c) => (
+                          <TouchableOpacity
+                            key={c}
+                            onPress={() => setActivePencilColor(c)}
+                            style={[
+                              styles.colorDot,
+                              {
+                                backgroundColor: c,
+                                borderColor: activePencilColor === c ? colors.verifiedBlue : colors.border,
+                              },
+                            ]}
+                            activeOpacity={0.85}
+                            disabled={isSavingEdit}
+                          />
+                        ))}
+                      </View>
+
+                      <View style={styles.editorActionsRow}>
+                        <TouchableOpacity
+                          onPress={undoLastStroke}
+                          style={[styles.editorActionBtn, { borderColor: colors.border }]}
+                          activeOpacity={0.85}
+                          disabled={isSavingEdit || strokes.length === 0}
+                        >
+                          <Text style={[styles.editorActionText, { color: colors.textSecondary }]}>Undo</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={clearStrokes}
+                          style={[styles.editorActionBtn, { borderColor: colors.border }]}
+                          activeOpacity={0.85}
+                          disabled={isSavingEdit || strokes.length === 0}
+                        >
+                          <Text style={[styles.editorActionText, { color: colors.textSecondary }]}>Clear</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
-              </View>
 
-              {/* Hidden export surface (full resolution) */}
-              <View style={styles.hiddenExportSurface} pointerEvents="none">
-                <Svg
-                  ref={exportSvgRef}
-                  width={attachedMedia[editingIndex].width}
-                  height={attachedMedia[editingIndex].height}
-                >
-                  <SvgImage
-                    href={{ uri: attachedMedia[editingIndex].uri }}
-                    width={attachedMedia[editingIndex].width}
-                    height={attachedMedia[editingIndex].height}
-                    preserveAspectRatio="xMidYMid slice"
-                  />
-                  {renderStrokes(attachedMedia[editingIndex].width, attachedMedia[editingIndex].height) as any}
-                </Svg>
-              </View>
-            </View>
-          ) : null}
+                <View style={styles.editorModalBody}>
+                  <View
+                    style={[
+                      styles.editorFullFrame,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.background,
+                        width: editorTargetFrame.width || undefined,
+                        height: editorTargetFrame.height || undefined,
+                      },
+                    ]}
+                    onLayout={(e) => {
+                      const { width, height } = e.nativeEvent.layout;
+                      if (!width || !height) return;
+                      setEditorFrameSize({ width, height });
+
+                      // When the frame becomes known, re-clamp translation.
+                      const media = attachedMedia[editingIndex];
+                      if (!media) return;
+                      setEditorTranslate((prev) =>
+                        clampTranslateForCover(width, height, media.width, media.height, editorScale, prev)
+                      );
+                    }}
+                    {...editorPanResponder.panHandlers}
+                  >
+                    {editorFrameSize.width && editorFrameSize.height ? (
+                      <Svg width={editorFrameSize.width} height={editorFrameSize.height}>
+                        {(() => {
+                          const media = attachedMedia[editingIndex];
+                          const frameW = editorFrameSize.width;
+                          const frameH = editorFrameSize.height;
+                          const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
+                          const totalScale = baseScale * editorScale;
+                          const imageW = media.width * totalScale;
+                          const imageH = media.height * totalScale;
+                          const x0 = (frameW - imageW) / 2 + editorTranslate.x;
+                          const y0 = (frameH - imageH) / 2 + editorTranslate.y;
+                          return (
+                            <>
+                              <SvgImage
+                                href={{ uri: media.uri }}
+                                x={x0}
+                                y={y0}
+                                width={imageW}
+                                height={imageH}
+                                preserveAspectRatio="none"
+                              />
+                              {editorMode === 'draw' ? (renderStrokes(frameW, frameH) as any) : null}
+                            </>
+                          );
+                        })()}
+                      </Svg>
+                    ) : null}
+                  </View>
+
+                  {/* Hidden export surface (cropped + strokes) */}
+                  <View style={styles.hiddenExportSurface} pointerEvents="none">
+                    {(() => {
+                      const media = attachedMedia[editingIndex];
+                      const frameW = editorFrameSize.width;
+                      const frameH = editorFrameSize.height;
+                      if (!frameW || !frameH) return null;
+
+                      const mult = Math.min(3, Math.max(2, PixelRatio.get()));
+                      const exportW = Math.round(frameW * mult);
+                      const exportH = Math.round(frameH * mult);
+
+                      const baseScale = getBaseCoverScale(frameW, frameH, media.width, media.height);
+                      const totalScale = baseScale * editorScale;
+                      const imageW = media.width * totalScale;
+                      const imageH = media.height * totalScale;
+                      const x0 = (frameW - imageW) / 2 + editorTranslate.x;
+                      const y0 = (frameH - imageH) / 2 + editorTranslate.y;
+
+                      return (
+                        <Svg ref={exportSvgRef} width={exportW} height={exportH}>
+                          <SvgImage
+                            href={{ uri: media.uri }}
+                            x={x0 * mult}
+                            y={y0 * mult}
+                            width={imageW * mult}
+                            height={imageH * mult}
+                            preserveAspectRatio="none"
+                          />
+                          {strokes.length ? (renderStrokes(exportW, exportH) as any) : null}
+                        </Svg>
+                      );
+                    })()}
+                  </View>
+                </View>
+              </SafeAreaView>
+            ) : null}
+          </Modal>
 
           {/* Priority: Sentiment Toggle */}
           <View style={styles.sentimentSection}>
@@ -668,6 +983,7 @@ const styles = StyleSheet.create({
   previewImage: {
     width: '100%',
     height: '100%',
+    backgroundColor: 'transparent',
   },
   removeBtn: {
     position: 'absolute',
@@ -693,21 +1009,6 @@ const styles = StyleSheet.create({
   },
   editBtnText: { fontWeight: '800', fontSize: 12 },
 
-  editorWrap: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-  },
-  editorHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  editorTitle: { fontWeight: '900', fontSize: 14 },
-  editorLink: { fontWeight: '800', fontSize: 12 },
-
   editorToolbar: { gap: 10, marginBottom: 10 },
   colorRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   colorDot: {
@@ -726,19 +1027,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   editorActionText: { fontWeight: '800', fontSize: 12 },
-  editorSaveBtn: {
+  editorModalContainer: { flex: 1 },
+  editorModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  editorModalHeaderText: { fontWeight: '900', fontSize: 14 },
+  editorModalTitle: { fontWeight: '900', fontSize: 14 },
+  editorModalToolbar: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
+  modeRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modeBtn: {
     flex: 1,
     height: 36,
-    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editorSaveText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12 },
-
-  editorPreviewOuter: { alignItems: 'center' },
-  editorPreview: {
-    borderRadius: 12,
+  modeBtnText: { fontWeight: '900', fontSize: 12 },
+  drawToolsRow: { gap: 10 },
+  editorModalBody: { flex: 1, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  editorFullFrame: {
     borderWidth: 1,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   hiddenExportSurface: {

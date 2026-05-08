@@ -226,7 +226,15 @@ npm run dev
 
 ```bash
 docker-compose up -d
-# Builds and runs both frontend and backend with MongoDB and Redis
+# Runs backend + MongoDB + Redis for local development
+```
+
+### Production Docker Compose
+
+- See `PRODUCTION.md` for deployment notes.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
 ## 📖 Detailed Documentation
@@ -243,7 +251,7 @@ git checkout -b feature/feature-name
 ```
 
 ### 2. Development
-- Frontend: `npm run dev` in mobile-app folder
+- Frontend: `npm start` in mobile-app folder
 - Backend: `npm run dev` in backend folder
 
 ### 3. Testing
