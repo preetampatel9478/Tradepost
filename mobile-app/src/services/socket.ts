@@ -112,7 +112,7 @@ export async function getAuthedSocket(): Promise<Socket> {
   if (candidates.length) baseUrl = candidates[0];
 
   socketSingleton = io(baseUrl, {
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     auth: { token: token || '' },
     autoConnect: true,
     reconnection: true,

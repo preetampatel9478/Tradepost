@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Post from '../models/Post';
 import Comment from '../models/Comment';
 import Notification from '../models/Notification';
+import Report from '../models/Report';
 import { auth, optionalAuth, type AuthenticatedRequest } from '../middlewares/auth';
 import { createError } from '../middlewares/errorHandler';
 import { uploadPostMedia, buildPublicFileUrl } from '../config/upload';
@@ -200,6 +201,53 @@ router.delete('/:postId/like', auth, async (req: AuthenticatedRequest, res, next
     emitPostEngagementUpdated(String(updated._id), likeCount, commentCount);
     return res.json({ ...updated.toObject(), isLiked: false, likeCount });
   } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
+
+// Report a post (community moderation signal)
+router.post('/:postId/report', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+
+    const { postId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(postId)) return next(createError(400, 'Invalid postId'));
+
+    const reason = String(req.body?.reason || '').trim();
+    const allowedReasons = ['spam', 'harassment', 'fake_stock_tips', 'scam', 'hate_speech', 'misinformation'] as const;
+    if (!reason || !(allowedReasons as readonly string[]).includes(reason)) {
+      return next(createError(400, 'Invalid reason'));
+    }
+
+    const noteRaw = typeof req.body?.note === 'string' ? req.body.note : '';
+    const note = String(noteRaw).trim();
+    if (note.length > 500) return next(createError(400, 'Note is too long (max 500 chars)'));
+
+    const post = await Post.findById(postId).select('author');
+    if (!post) return next(createError(404, 'Post not found'));
+
+    const postAuthor = String((post as any).author || '');
+    if (postAuthor && postAuthor === String(req.userId)) {
+      return next(createError(400, 'You cannot report your own post'));
+    }
+
+    const update: any = {
+      post: post._id,
+      postAuthor,
+      reporter: req.userId,
+      reason,
+      status: 'open',
+    };
+    if (note) update.note = note;
+
+    const report = await Report.findOneAndUpdate(
+      { post: post._id, reporter: req.userId, reason },
+      { $set: update },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).select('_id');
+
+    return res.status(201).json({ success: true, reportId: report?._id });
+  } catch {
     return next(createError(500, 'Server error'));
   }
 });

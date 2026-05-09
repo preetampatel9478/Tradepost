@@ -18,6 +18,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  Flag,
   Heart,
   MessageCircle,
   Rocket,
@@ -31,6 +32,7 @@ import ProfileModal from '../components/common/ProfileModal';
 import PublicProfileModal from '../components/common/PublicProfileModal';
 import { CommentsModal } from '../components/common/CommentsModal';
 import NotificationsModal from '../components/common/NotificationsModal';
+import ReportPostModal from '../components/common/ReportPostModal';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchPosts, likePost, patchPostEngagement, type ApiPost, unlikePost } from '../store/slices/postSlice';
 import { disconnectSocket, getAuthedSocket } from '../services/socket';
@@ -48,11 +50,14 @@ export default function HomeScreen() {
   const [commentsForPostId, setCommentsForPostId] = useState<string | null>(null);
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [publicProfileVisible, setPublicProfileVisible] = useState(false);
+  const [reportingPost, setReportingPost] = useState<ApiPost | null>(null);
   const user = useAppSelector((state) => state.auth.user);
   const userName = user?.name ?? 'Trader';
   const userAvatar = user?.avatar;
   const userInitials = getInitials(userName);
   const currentUserVerified = user?.isVerified ?? false;
+  const currentUserId = user?.id ? String(user.id) : '';
+  const currentUserHandle = user?.userId ? String(user.userId) : '';
   const postsState = useAppSelector((state) => state.posts);
   const { theme, colors } = useTheme();
 
@@ -279,6 +284,9 @@ export default function HomeScreen() {
             post={post}
             onOpenComments={(postId) => setCommentsForPostId(postId)}
             onOpenProfile={(userId) => openPublicProfile(userId)}
+            onReportPost={() => setReportingPost(post)}
+            currentUserId={currentUserId}
+            currentUserHandle={currentUserHandle}
           />
         ))}
 
@@ -299,6 +307,11 @@ export default function HomeScreen() {
         postId={commentsForPostId}
         onClose={() => setCommentsForPostId(null)}
       />
+      <ReportPostModal
+        visible={Boolean(reportingPost)}
+        post={reportingPost}
+        onClose={() => setReportingPost(null)}
+      />
     </View>
   );
 }
@@ -307,10 +320,16 @@ function OpinionCard({
   post,
   onOpenComments,
   onOpenProfile,
+  onReportPost,
+  currentUserId,
+  currentUserHandle,
 }: {
   post: ApiPost;
   onOpenComments: (postId: string) => void;
   onOpenProfile: (userId: string) => void;
+  onReportPost: () => void;
+  currentUserId: string;
+  currentUserHandle: string;
 }) {
   const sentiment = post.sentiment || 'neutral';
   const bullish = sentiment === 'bullish';
@@ -331,6 +350,15 @@ function OpinionCard({
   const handle = useMemo(() => (post.author?.userId ? `@${post.author.userId}` : '@trader'), [post.author?.userId]);
   const avatarUrl = post.author?.profilePhoto;
   const authorUserId = post.author?.userId;
+  const canReport = useMemo(() => {
+    const authorId = String(post.author?._id || '').trim();
+    const authorHandle = String(post.author?.userId || '').trim();
+    const myId = String(currentUserId || '').trim();
+    const myHandle = String(currentUserHandle || '').trim();
+    const isOwnById = Boolean(myId && authorId && myId === authorId);
+    const isOwnByHandle = Boolean(myHandle && authorHandle && myHandle.toLowerCase() === authorHandle.toLowerCase());
+    return !(isOwnById || isOwnByHandle);
+  }, [currentUserHandle, currentUserId, post.author?._id, post.author?.userId]);
   const createdAt = useMemo(() => {
     const d = new Date(post.createdAt);
     if (Number.isNaN(d.getTime())) return '';
@@ -379,25 +407,39 @@ function OpinionCard({
             </View>
           </TouchableOpacity>
 
-          {showSentiment ? (
-            <View
-              style={[
-                styles.sentimentBadge,
-                bullish
-                  ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
-                  : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' },
-              ]}
-            >
-              {bullish ? (
-                <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
-              ) : (
-                <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
-              )}
-              <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>
-                {sentiment.toUpperCase()}
-              </Text>
-            </View>
-          ) : null}
+          <View style={styles.cardTopRight}>
+            {showSentiment ? (
+              <View
+                style={[
+                  styles.sentimentBadge,
+                  bullish
+                    ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
+                    : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' },
+                ]}
+              >
+                {bullish ? (
+                  <Rocket size={15} color={colors.bullish} strokeWidth={2.4} />
+                ) : (
+                  <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
+                )}
+                <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>
+                  {sentiment.toUpperCase()}
+                </Text>
+              </View>
+            ) : null}
+
+            {canReport ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={onReportPost}
+                style={[styles.reportBtn, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                accessibilityRole="button"
+                accessibilityLabel="Report post"
+              >
+                <Flag size={16} color={colors.textSecondary} strokeWidth={2.4} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         <Text style={[styles.postContent, { color: colors.text }]}>
@@ -854,6 +896,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  cardTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  reportBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   identityRow: {
     flexDirection: 'row',
