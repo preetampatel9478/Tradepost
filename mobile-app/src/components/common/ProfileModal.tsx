@@ -14,12 +14,15 @@ import {
   Image,
   Switch,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import Constants from 'expo-constants';
 import { Settings, Bell, CircleHelp, User, LogOut, ChevronRight, Moon } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { logout, setUser } from '../../store/slices/authSlice';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useLanguage, type LanguageCode } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import { pickAndProcessImage } from '../../utils/imageProcessor';
 import { getApiErrorMessage } from '../../utils/apiError';
@@ -41,6 +44,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const bioText = ((user as any)?.bio as string | undefined) || '';
   const isVerified = user?.isVerified ?? false;
   const { colors, theme, themeMode, setThemeMode } = useTheme();
+  const { language: appLanguage, setLanguage: setAppLanguage, t } = useLanguage();
 
   const [profileStats, setProfileStats] = useState<{ followerCount: number; followingCount: number; postCount: number }>(
     { followerCount: 0, followingCount: 0, postCount: 0 }
@@ -53,6 +57,14 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     | 'account'
     | 'notification'
     | 'help'
+    | 'helpFaq'
+    | 'helpContact'
+    | 'helpReportProblem'
+    | 'helpReportContent'
+    | 'helpGuidelines'
+    | 'helpPrivacy'
+    | 'helpTerms'
+    | 'helpAbout'
     | 'posts'
     | 'followers'
     | 'following'
@@ -68,12 +80,25 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const [draftEmail, setDraftEmail] = useState('');
   const [draftBio, setDraftBio] = useState('');
 
-  const [draftLanguage, setDraftLanguage] = useState('en');
+  const [draftLanguage, setDraftLanguage] = useState<LanguageCode>(appLanguage);
   const [draftPrivate, setDraftPrivate] = useState(false);
   const [draftNotifyPush, setDraftNotifyPush] = useState(true);
   const [draftNotifyEmail, setDraftNotifyEmail] = useState(false);
 
   const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
+
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportScreenshotUri, setSupportScreenshotUri] = useState<string | null>(null);
+  const [reportProblemScreenshotUri, setReportProblemScreenshotUri] = useState<string | null>(null);
+  const [reportProblemCategory, setReportProblemCategory] = useState<'app_crash' | 'login_issue' | 'payment_issue' | 'bug_report' | 'fake_profile'>(
+    'bug_report'
+  );
+  const [reportProblemDetails, setReportProblemDetails] = useState('');
+  const [reportContentReason, setReportContentReason] = useState<
+    'spam' | 'harassment' | 'fake_stock_tips' | 'scam' | 'hate_speech' | 'misinformation'
+  >('spam');
+  const [reportContentTarget, setReportContentTarget] = useState('');
+  const [reportContentDetails, setReportContentDetails] = useState('');
 
   const [listLoading, setListLoading] = useState(false);
   const [myPosts, setMyPosts] = useState<Array<any>>([]);
@@ -153,7 +178,10 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
         setDraftEmail(String(data.email ?? user?.email ?? '').trim());
         setDraftBio(String(data.bio ?? (user as any)?.bio ?? '').trim());
 
-        setDraftLanguage(String(data.settings?.language ?? 'en').trim() || 'en');
+        const nextLang = (String(data.settings?.language ?? '').trim() || 'en') as string;
+        const normalizedLang: LanguageCode = nextLang === 'hi' ? 'hi' : 'en';
+        setDraftLanguage(normalizedLang);
+        setAppLanguage(normalizedLang);
         setDraftPrivate(Boolean(data.settings?.accountPrivate ?? false));
         setDraftNotifyPush(Boolean(data.settings?.notifyPush ?? true));
         setDraftNotifyEmail(Boolean(data.settings?.notifyEmail ?? false));
@@ -171,7 +199,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     return () => {
       isMounted = false;
     };
-  }, [visible]);
+  }, [visible, setAppLanguage, setThemeMode]);
 
   useEffect(() => {
     if (!visible) return;
@@ -348,6 +376,11 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
       setPostComments([]);
       return;
     }
+
+    if ((panel as string).startsWith('help') && panel !== 'help') {
+      setPanel('help');
+      return;
+    }
     closePanel();
   };
 
@@ -422,12 +455,51 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     }
   };
 
-  const persistThemeMode = async (nextMode: 'light' | 'dark') => {
+  const persistThemeMode = async (nextMode: 'light' | 'dark' | 'system') => {
     setThemeMode(nextMode);
     try {
       await api.put('/users/me', { settings: { themeMode: nextMode } });
     } catch {
       // Ignore; local theme change still applies.
+    }
+  };
+
+  const showComingSoon = (title: string) => {
+    Alert.alert(title, t('comingSoon'));
+  };
+
+  const pickSupportScreenshot = async () => {
+    try {
+      const img = await pickAndProcessImage();
+      if (!img) return;
+      setSupportScreenshotUri(img.uri);
+    } catch (e: any) {
+      Alert.alert('Image error', e?.message || 'Failed to pick image');
+    }
+  };
+
+  const pickReportProblemScreenshot = async () => {
+    try {
+      const img = await pickAndProcessImage();
+      if (!img) return;
+      setReportProblemScreenshotUri(img.uri);
+    } catch (e: any) {
+      Alert.alert('Image error', e?.message || 'Failed to pick image');
+    }
+  };
+
+  const openSupportEmail = async (subject: string, body: string) => {
+    const to = t('supportEmail');
+    const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
+        Alert.alert('Email not available', `Please email ${to}`);
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Email not available', `Please email ${to}`);
     }
   };
 
@@ -482,6 +554,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
           } as any)
         );
       }
+
+      setAppLanguage(draftLanguage);
 
       closePanel();
     } catch (e: any) {
@@ -587,8 +661,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                   <CircleHelp size={20} color={colors.verifiedBlue} />
                 </View>
                 <View style={styles.menuTextContainer}>
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Help Support</Text>
-                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>FAQs, contact us</Text>
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>{t('helpSupport')}</Text>
+                  <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>FAQ, support, policies</Text>
                 </View>
                 <ChevronRight size={20} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -634,9 +708,27 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                 {panel === 'profile'
                   ? 'My Profile'
                   : panel === 'account'
-                    ? 'Account Settings'
+                    ? t('accountSettings')
                     : panel === 'notification'
                       ? 'Notification'
+                      : panel === 'help'
+                        ? t('helpSupport')
+                        : panel === 'helpFaq'
+                          ? t('faq')
+                          : panel === 'helpContact'
+                            ? t('contactSupport')
+                            : panel === 'helpReportProblem'
+                              ? t('reportProblem')
+                              : panel === 'helpReportContent'
+                                ? t('reportUserPost')
+                                : panel === 'helpGuidelines'
+                                  ? t('communityGuidelines')
+                                  : panel === 'helpPrivacy'
+                                    ? t('privacyPolicy')
+                                    : panel === 'helpTerms'
+                                      ? t('termsConditions')
+                                      : panel === 'helpAbout'
+                                        ? t('aboutTradePost')
                       : panel === 'posts'
                         ? 'My Posts'
                         : panel === 'editPost'
@@ -651,7 +743,9 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
               </Text>
               <TouchableOpacity onPress={closeOrBackPanel} activeOpacity={0.8}>
                 <Text style={[styles.panelClose, { color: colors.verifiedBlue }]}>
-                  {panel === 'editPost' || panel === 'postComments' ? 'Back' : 'Close'}
+                  {panel === 'editPost' || panel === 'postComments' || ((panel as string).startsWith('help') && panel !== 'help')
+                    ? 'Back'
+                    : 'Close'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -740,8 +834,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                 <>
                   <View style={styles.toggleRow}>
                     <View style={styles.toggleText}>
-                      <Text style={[styles.menuItemText, { color: colors.text }]}>Private Account</Text>
-                      <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>Only approved users can follow</Text>
+                      <Text style={[styles.menuItemText, { color: colors.text }]}>{t('privateAccount')}</Text>
+                      <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>{t('privateAccountHelp')}</Text>
                     </View>
                     <Switch
                       value={draftPrivate}
@@ -752,15 +846,112 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                     />
                   </View>
 
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Language</Text>
-                  <TextInput
-                    value={draftLanguage}
-                    onChangeText={setDraftLanguage}
-                    placeholder="en"
-                    placeholderTextColor={colors.textSecondary}
-                    autoCapitalize="none"
-                    style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-                  />
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{t('language')}</Text>
+                  <View style={[styles.segmentContainer, { backgroundColor: colors.searchBg, borderColor: colors.border }]}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setDraftLanguage('en')}
+                    style={[
+                      styles.segmentOption,
+                      draftLanguage === 'en' && { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.segmentText, { color: colors.text }]}>{t('english')}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setDraftLanguage('hi')}
+                    style={[
+                      styles.segmentOption,
+                      draftLanguage === 'hi' && { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.segmentText, { color: colors.text }]}>{t('hindi')}</Text>
+                  </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.sectionSpacer} />
+
+                  <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('privacySecurity')}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('twoFA'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('twoFA')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('blockedUsers'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('blockedUsers')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('loginActivity'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('loginActivity')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.sectionSpacer} />
+
+                  <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('subscription')}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('premiumPlan'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('premiumPlan')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('verificationBadge'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('verificationBadge')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.sectionSpacer} />
+
+                  <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('account')}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => showComingSoon(t('changePassword'))}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('changePassword')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.sectionSpacer} />
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      Alert.alert(t('deleteAccount'), 'This action cannot be undone.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Continue', style: 'destructive', onPress: () => showComingSoon(t('deleteAccount')) },
+                      ]);
+                    }}
+                    style={[
+                      styles.settingRow,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(239, 68, 68, 0.10)',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.bearish }]}>{t('deleteAccount')}</Text>
+                    <ChevronRight size={18} color={colors.bearish} />
+                  </TouchableOpacity>
                 </>
               ) : null}
 
@@ -797,9 +988,434 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
               ) : null}
 
               {panel === 'help' ? (
-                <Text style={[styles.helpText, { color: colors.textSecondary }]}>
-                  For help, contact support. (Hook this to real FAQ/contact later.)
-                </Text>
+                <>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpFaq')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('faq')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpContact')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('contactSupport')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpReportProblem')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('reportProblem')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpReportContent')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('reportUserPost')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpGuidelines')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('communityGuidelines')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpPrivacy')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('privacyPolicy')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpTerms')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('termsConditions')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setPanel('helpAbout')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <Text style={[styles.settingRowText, { color: colors.text }]}>{t('aboutTradePost')}</Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </>
+              ) : panel === 'helpFaq' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('faq')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      Common questions and quick answers.
+                    </Text>
+                  </View>
+
+                  {[
+                    {
+                      q: 'How do I reset my password?',
+                      a: 'Go to Login → “Forgot Password?” and follow the reset steps. If you are stuck, contact support.',
+                    },
+                    {
+                      q: 'How to get verified?',
+                      a: 'Verification depends on account activity and eligibility. Check “Verification Badge” in Subscription settings when available.',
+                    },
+                    {
+                      q: 'How streaks work?',
+                      a: 'Streaks are based on consistent engagement. Details will appear in-app as streaks roll out.',
+                    },
+                    {
+                      q: 'Why is my account restricted?',
+                      a: 'Accounts may be restricted due to policy violations or suspicious activity. Review Community Guidelines and contact support.',
+                    },
+                    {
+                      q: 'How to report abuse?',
+                      a: 'Open Help & Support → “Report User/Post” and choose the reason. Provide as much detail as possible.',
+                    },
+                    {
+                      q: 'How to delete my account?',
+                      a: 'Go to Account Settings → “Delete Account”. If the option is not available yet, contact support.',
+                    },
+                  ].map((item) => (
+                    <View
+                      key={item.q}
+                      style={[styles.faqCard, { borderColor: colors.border, backgroundColor: colors.card }]}
+                    >
+                      <Text style={[styles.faqQ, { color: colors.text }]}>{item.q}</Text>
+                      <Text style={[styles.faqA, { color: colors.textSecondary }]}>{item.a}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : panel === 'helpContact' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('contactSupport')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      Email us anytime. Include steps to reproduce the issue.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => openSupportEmail('TradePost Support', supportMessage || 'Hello TradePost support,')}
+                    style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.settingRowText, { color: colors.text }]}>{t('supportEmail')}</Text>
+                      <Text style={[styles.menuSubText, { color: colors.textSecondary, marginTop: 4 }]}>Tap to email</Text>
+                    </View>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Message</Text>
+                  <TextInput
+                    value={supportMessage}
+                    onChangeText={setSupportMessage}
+                    placeholder="Describe your issue"
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    style={[styles.textArea, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                  />
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Attach screenshot (optional)</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={pickSupportScreenshot}
+                    style={[styles.secondaryButton, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                      {supportScreenshotUri ? 'Change Screenshot' : 'Attach Screenshot'}
+                    </Text>
+                  </TouchableOpacity>
+                  {supportScreenshotUri ? (
+                    <View style={[styles.screenshotFrame, { borderColor: colors.border, backgroundColor: colors.card }]}
+                    >
+                      <Image source={{ uri: supportScreenshotUri }} style={styles.screenshotImage} />
+                    </View>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: colors.verifiedBlue, opacity: 1 }]}
+                    onPress={() =>
+                      openSupportEmail(
+                        'TradePost Support Request',
+                        `${supportMessage || 'Support request'}\n\n---\nApp: TradePost\nVersion: ${String(Constants.expoConfig?.version || 'unknown')}\nEnvironment: ${String(Constants.appOwnership || 'unknown')}`
+                      )
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.saveButtonText}>{t('sendEmail')}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : panel === 'helpReportProblem' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('reportProblem')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      Choose a category and share details.
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
+                  {[
+                    { key: 'app_crash', label: 'App crash' },
+                    { key: 'login_issue', label: 'Login issue' },
+                    { key: 'payment_issue', label: 'Payment issue' },
+                    { key: 'bug_report', label: 'Bug report' },
+                    { key: 'fake_profile', label: 'Fake profile' },
+                  ].map((c) => (
+                    <TouchableOpacity
+                      key={c.key}
+                      activeOpacity={0.85}
+                      onPress={() => setReportProblemCategory(c.key as any)}
+                      style={[
+                        styles.choiceRow,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: reportProblemCategory === (c.key as any) ? colors.searchBg : colors.card,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.choiceRowText, { color: colors.text }]}>{c.label}</Text>
+                      {reportProblemCategory === (c.key as any) ? (
+                        <Text style={[styles.choiceRowMeta, { color: colors.verifiedBlue }]}>Selected</Text>
+                      ) : (
+                        <ChevronRight size={18} color={colors.textSecondary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Details</Text>
+                  <TextInput
+                    value={reportProblemDetails}
+                    onChangeText={setReportProblemDetails}
+                    placeholder="What happened? Steps to reproduce?"
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    style={[styles.textArea, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                  />
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Attach screenshot (optional)</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={pickReportProblemScreenshot}
+                    style={[styles.secondaryButton, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                      {reportProblemScreenshotUri ? 'Change Screenshot' : 'Attach Screenshot'}
+                    </Text>
+                  </TouchableOpacity>
+                  {reportProblemScreenshotUri ? (
+                    <View style={[styles.screenshotFrame, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                      <Image source={{ uri: reportProblemScreenshotUri }} style={styles.screenshotImage} />
+                    </View>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: colors.verifiedBlue, opacity: 1 }]}
+                    onPress={() => showComingSoon(t('reportProblem'))}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.saveButtonText}>Submit</Text>
+                  </TouchableOpacity>
+                </>
+              ) : panel === 'helpReportContent' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('reportUserPost')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      Report abuse to help keep the community safe.
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Reason</Text>
+                  {[
+                    { key: 'spam', label: 'Spam' },
+                    { key: 'harassment', label: 'Harassment' },
+                    { key: 'fake_stock_tips', label: 'Fake stock tips' },
+                    { key: 'scam', label: 'Scam' },
+                    { key: 'hate_speech', label: 'Hate speech' },
+                    { key: 'misinformation', label: 'Misinformation' },
+                  ].map((r) => (
+                    <TouchableOpacity
+                      key={r.key}
+                      activeOpacity={0.85}
+                      onPress={() => setReportContentReason(r.key as any)}
+                      style={[
+                        styles.choiceRow,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: reportContentReason === (r.key as any) ? colors.searchBg : colors.card,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.choiceRowText, { color: colors.text }]}>{r.label}</Text>
+                      {reportContentReason === (r.key as any) ? (
+                        <Text style={[styles.choiceRowMeta, { color: colors.verifiedBlue }]}>Selected</Text>
+                      ) : (
+                        <ChevronRight size={18} color={colors.textSecondary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>User ID or Post ID / link</Text>
+                  <TextInput
+                    value={reportContentTarget}
+                    onChangeText={setReportContentTarget}
+                    placeholder="@user or post id"
+                    placeholderTextColor={colors.textSecondary}
+                    autoCapitalize="none"
+                    style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                  />
+
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Additional details</Text>
+                  <TextInput
+                    value={reportContentDetails}
+                    onChangeText={setReportContentDetails}
+                    placeholder="Add context (optional)"
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    style={[styles.textArea, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.saveButton, { backgroundColor: colors.verifiedBlue, opacity: 1 }]}
+                    onPress={() => showComingSoon(t('reportUserPost'))}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.saveButtonText}>Submit</Text>
+                  </TouchableOpacity>
+                </>
+              ) : panel === 'helpGuidelines' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('communityGuidelines')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      Be respectful, be honest, and keep discussions constructive.
+                    </Text>
+                  </View>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    • No spam, scams, or misleading claims.\n\n• No harassment, hate speech, or bullying.\n\n• No market manipulation attempts or coordinated pump-and-dump content.\n\n• Report abuse using “Report User/Post”.\n\n• TradePost may restrict or ban accounts that violate rules.
+                  </Text>
+                </>
+              ) : panel === 'helpPrivacy' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('privacyPolicy')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      We respect your privacy. This summary will be expanded in production.
+                    </Text>
+                  </View>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost securely stores and protects user data. We use your information to provide core features like authentication, profiles, and notifications.\n\nWe do not sell your personal data. We may update this policy as the product evolves.
+                  </Text>
+                </>
+              ) : panel === 'helpTerms' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('termsConditions')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      By using TradePost, you agree to the terms below.
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>1. Acceptance of Terms</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    By using TradePost, users agree to follow all platform rules, policies, and applicable laws.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>2. User Accounts</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    Users are responsible for account security. Fake accounts are prohibited. Keep credentials confidential.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>3. Financial Disclaimer (Very Important)</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost does not provide financial, investment, or trading advice. All content is for informational and educational purposes only. Users are solely responsible for their investment decisions.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>4. No Guaranteed Profit</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost does not guarantee stock accuracy, profits, or investment returns.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>5. Prohibited Activities</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    Spam, scams, fake stock tips, market manipulation, harassment, and misinformation are prohibited.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>6. Account Suspension</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost can suspend or permanently ban users violating platform rules.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>7. User Content</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    Users own their content but allow TradePost to display and store it within the platform.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>8. Subscription & Payments</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    Subscriptions may renew automatically unless canceled. Premium access depends on an active subscription.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>9. Privacy & Data</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    User data is securely stored and protected according to our Privacy Policy.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>10. Limitation of Liability</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost is not responsible for financial losses or investment decisions made by users.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>11. Legal Compliance</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost is not a SEBI-registered financial advisor or brokerage platform.
+                  </Text>
+
+                  <Text style={[styles.docHeading, { color: colors.text }]}>12. Updates to Terms</Text>
+                  <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                    TradePost may update Terms & Conditions at any time.
+                  </Text>
+                </>
+              ) : panel === 'helpAbout' ? (
+                <>
+                  <View style={[styles.docCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.docTitle, { color: colors.text }]}>{t('aboutTradePost')}</Text>
+                    <Text style={[styles.docBody, { color: colors.textSecondary }]}>
+                      TradePost is a social platform for market discussion.
+                    </Text>
+                  </View>
+
+                  <View style={[styles.aboutRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.aboutLabel, { color: colors.textSecondary }]}>{t('appVersion')}</Text>
+                    <Text style={[styles.aboutValue, { color: colors.text }]}>{String(Constants.expoConfig?.version || 'unknown')}</Text>
+                  </View>
+                  <View style={[styles.aboutRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                    <Text style={[styles.aboutLabel, { color: colors.textSecondary }]}>Environment</Text>
+                    <Text style={[styles.aboutValue, { color: colors.text }]}>{String(Constants.appOwnership || 'unknown')}</Text>
+                  </View>
+                </>
               ) : panel === 'posts' ? (
                 <>
                   {listLoading ? (
@@ -1387,6 +2003,145 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     fontWeight: '600',
+  },
+  segmentContainer: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 6,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  segmentOption: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  sectionSpacer: {
+    height: 14,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    marginBottom: 10,
+  },
+  settingRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  settingRowText: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  docCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 14,
+  },
+  docTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  docHeading: {
+    marginTop: 14,
+    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  docBody: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  faqCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+  },
+  faqQ: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  faqA: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  choiceRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  choiceRowText: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    flex: 1,
+    paddingRight: 12,
+  },
+  choiceRowMeta: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  screenshotFrame: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+    height: 180,
+  },
+  screenshotImage: {
+    width: '100%',
+    height: '100%',
+  },
+  aboutRow: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  aboutLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  aboutValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.2,
   },
   textArea: {
     borderWidth: 1,

@@ -5,13 +5,16 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import store from './src/store/store';
 import { ThemeProvider } from './src/contexts/ThemeContext';
+import { LanguageProvider } from './src/contexts/LanguageContext';
 
 export default function App() {
   return (
     <ReduxProvider store={store}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <RootNavigator />
+          <LanguageProvider>
+            <RootNavigator />
+          </LanguageProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </ReduxProvider>
