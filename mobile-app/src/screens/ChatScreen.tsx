@@ -41,6 +41,20 @@ type ChatListItem = {
   lastMessageText?: string;
 };
 
+const formatTime = (isoDate?: string | Date) => {
+  if (!isoDate) return '';
+  const d = new Date(isoDate);
+  const now = new Date();
+  
+  if (d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  } else if (now.getTime() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
+    return d.toLocaleDateString([], { weekday: 'short' });
+  } else {
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+};
+
 export default function ChatScreen() {
   const { theme, colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -268,12 +282,19 @@ export default function ChatScreen() {
   }, [activePeer?.id, messages.length]);
 
   useEffect(() => {
-    let socketCleanup: (() => void) | null = null;
+    if (!activePeer?.id) return;
+    
+    let active = true;
+    let socketRef: any = null;
+    let handlerRef: any = null;
 
     (async () => {
       try {
         const socket = await getAuthedSocket();
-        const handler = (payload: any) => {
+        if (!active) return;
+        
+        socketRef = socket;
+        handlerRef = (payload: any) => {
           const cid = String(payload?.conversationId || '');
           const msg = payload?.message as ChatMessage | undefined;
           if (!cid || !msg?._id) return;
@@ -282,21 +303,35 @@ export default function ChatScreen() {
           const peerOk =
             String(msg.senderId) === String(activePeer.id) || String(msg.recipientId) === String(activePeer.id);
           if (!peerOk) return;
+          
           setMessages((prev) => {
+            // Check if we already have this message by ID or if it's a recent matching optimistic message
             if (prev.some((m) => m._id === msg._id)) return prev;
+            
+            // Avoid duplicate optimistic messages arriving from socket before API response
+            const isDuplicate = prev.some(m => 
+              m.content === msg.content && 
+              m._id.startsWith('tmp-') && 
+              String(m.senderId) === String(msg.senderId)
+            );
+            
+            if (isDuplicate) return prev;
+            
             return [...prev, msg];
           });
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 0);
         };
-        socket.on('chat:message', handler);
-        socketCleanup = () => socket.off('chat:message', handler);
+        socket.on('chat:message', handlerRef);
       } catch {
         // ignore
       }
     })();
 
     return () => {
-      socketCleanup?.();
+      active = false;
+      if (socketRef && handlerRef) {
+        socketRef.off('chat:message', handlerRef);
+      }
     };
   }, [activePeer?.id, conversationId]);
 
@@ -310,15 +345,14 @@ export default function ChatScreen() {
         style={[styles.personRow, { borderColor: colors.border, backgroundColor: colors.card }]}
         onPress={() => openThread(item)}
       >
-        <View style={[styles.avatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-          >
+        <View style={[styles.avatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
           {item.avatar ? (
             <Image source={{ uri: item.avatar }} style={styles.avatarImg} />
           ) : (
             <Text style={[styles.avatarFallback, { color: colors.text }]}>{handle.slice(0, 1).toUpperCase()}</Text>
           )}
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
           <Text style={[styles.personName, { color: colors.text }]} numberOfLines={1}>
             {displayName}
           </Text>
@@ -326,9 +360,8 @@ export default function ChatScreen() {
             @{handle}
           </Text>
         </View>
-        <View style={[styles.pill, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-          >
-          <Text style={[styles.pillText, { color: colors.textSecondary }]}>Message</Text>
+        <View style={[styles.pill, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
+          <Text style={[styles.pillText, { color: colors.textSecondary }]}>Chat</Text>
         </View>
       </TouchableOpacity>
     );
@@ -340,6 +373,7 @@ export default function ChatScreen() {
     const handle = peer.userId || 'Trader';
     const displayName = peer.name?.trim() ? peer.name : handle;
     const preview = (item.lastMessageText || '').trim();
+    const timeText = formatTime(item.lastMessageAt);
 
     return (
       <TouchableOpacity
@@ -355,16 +389,17 @@ export default function ChatScreen() {
           )}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.personName, { color: colors.text }]} numberOfLines={1}>
-            {displayName}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.personName, { color: colors.text, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+              {displayName}
+            </Text>
+            {timeText ? (
+              <Text style={[styles.timeText, { color: colors.textSecondary }]}>{timeText}</Text>
+            ) : null}
+          </View>
+          <Text style={[styles.personHandle, { color: colors.textSecondary, marginTop: 4 }]} numberOfLines={2}>
+            {preview ? preview : `Start chatting with @${handle}`}
           </Text>
-          <Text style={[styles.personHandle, { color: colors.textSecondary }]} numberOfLines={1}>
-            @{handle}
-            {preview ? `  ·  ${preview}` : ''}
-          </Text>
-        </View>
-        <View style={[styles.pill, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
-          <Text style={[styles.pillText, { color: colors.textSecondary }]}>Open</Text>
         </View>
       </TouchableOpacity>
     );
@@ -379,12 +414,18 @@ export default function ChatScreen() {
             styles.msgBubble,
             {
               backgroundColor: mine ? colors.verifiedBlue : colors.searchBg,
-              borderColor: colors.border,
-              alignSelf: mine ? 'flex-end' : 'flex-start',
+              borderColor: mine ? colors.verifiedBlue : colors.border,
+              borderBottomRightRadius: mine ? 4 : 18,
+              borderTopRightRadius: 18,
+              borderBottomLeftRadius: mine ? 18 : 4,
+              borderTopLeftRadius: 18,
             },
           ]}
         >
           <Text style={[styles.msgText, { color: mine ? '#fff' : colors.text }]}>{item.content}</Text>
+          <Text style={[styles.msgTime, { color: mine ? 'rgba(255,255,255,0.7)' : colors.textSecondary, alignSelf: 'flex-end' }]}>
+            {formatTime(item.createdAt)}
+          </Text>
         </View>
       </View>
     );
@@ -426,7 +467,7 @@ export default function ChatScreen() {
             ) : (
               <FlatList
                 data={searchResults}
-                keyExtractor={(u) => u.id}
+                keyExtractor={(u, idx) => `${u.id}-${idx}`}
                 renderItem={renderPerson}
                 contentContainerStyle={{ paddingBottom: tabBarOffset + 18 }}
                 keyboardShouldPersistTaps="handled"
@@ -452,7 +493,7 @@ export default function ChatScreen() {
           ) : (
             <FlatList
               data={conversations}
-              keyExtractor={(c) => c.conversationId}
+              keyExtractor={(c, idx) => `${c.conversationId}-${idx}`}
               renderItem={renderConversation}
               contentContainerStyle={{ paddingBottom: tabBarOffset + 18 }}
               showsVerticalScrollIndicator={false}
@@ -507,12 +548,23 @@ export default function ChatScreen() {
                   listRef.current = r;
                 }}
                 data={messages}
-                keyExtractor={(m) => m._id}
+                keyExtractor={(m, idx) => `${m._id}-${idx}`}
                 renderItem={renderMessage}
-                contentContainerStyle={[styles.msgListPad, { paddingBottom: 12 }]}
+                contentContainerStyle={[
+                  styles.msgListPad, 
+                  { paddingBottom: 12, flexGrow: 1, justifyContent: messages.length === 0 ? 'center' : 'flex-end' }
+                ]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 style={{ flex: 1 }}
+                ListEmptyComponent={
+                  !threadLoading ? (
+                    <View style={styles.centerState}>
+                      <Text style={[styles.hint, { color: colors.textSecondary }]}>No messages yet.</Text>
+                      <Text style={[styles.hint, { color: colors.textSecondary, marginTop: 4, fontWeight: '500' }]}>Send a message to start chatting.</Text>
+                    </View>
+                  ) : null
+                }
               />
             )}
 
@@ -700,15 +752,30 @@ const styles = StyleSheet.create({
   },
   msgBubble: {
     maxWidth: '80%',
-    borderRadius: 16,
+    minWidth: 80,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   msgText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '500',
     lineHeight: 20,
+    marginBottom: 4,
+  },
+  msgTime: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  timeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   composer: {
     paddingHorizontal: 16,

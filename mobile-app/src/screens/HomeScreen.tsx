@@ -34,7 +34,13 @@ import { CommentsModal } from '../components/common/CommentsModal';
 import NotificationsModal from '../components/common/NotificationsModal';
 import ReportPostModal from '../components/common/ReportPostModal';
 import { useTheme } from '../contexts/ThemeContext';
-import { fetchPosts, likePost, patchPostEngagement, type ApiPost, unlikePost } from '../store/slices/postSlice';
+import {
+  fetchPosts,
+  likePost,
+  patchPostEngagement,
+  type ApiPost,
+  unlikePost,
+} from '../store/slices/postSlice';
 import { disconnectSocket, getAuthedSocket } from '../services/socket';
 import api from '../services/api';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -51,14 +57,14 @@ export default function HomeScreen() {
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
   const [publicProfileVisible, setPublicProfileVisible] = useState(false);
   const [reportingPost, setReportingPost] = useState<ApiPost | null>(null);
-  const user = useAppSelector((state) => state.auth.user);
+  const user = useAppSelector(state => state.auth.user);
   const userName = user?.name ?? 'Trader';
   const userAvatar = user?.avatar;
   const userInitials = getInitials(userName);
   const currentUserVerified = user?.isVerified ?? false;
   const currentUserId = user?.id ? String(user.id) : '';
   const currentUserHandle = user?.userId ? String(user.userId) : '';
-  const postsState = useAppSelector((state) => state.posts);
+  const postsState = useAppSelector(state => state.posts);
   const { theme, colors } = useTheme();
 
   const isLoadingRef = useRef(false);
@@ -138,7 +144,9 @@ export default function HomeScreen() {
   const posts: ApiPost[] = postsState.posts as ApiPost[];
 
   const [userQuery, setUserQuery] = useState('');
-  const [userResults, setUserResults] = useState<Array<{ _id: string; userId: string; profilePhoto?: string }>>([]);
+  const [userResults, setUserResults] = useState<
+    Array<{ _id: string; userId: string; profilePhoto?: string }>
+  >([]);
   const [userSearching, setUserSearching] = useState(false);
 
   useEffect(() => {
@@ -173,13 +181,16 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={theme === 'light' ? 'dark-content' : 'light-content'} backgroundColor={colors.background} />
+      <StatusBar
+        barStyle={theme === 'light' ? 'dark-content' : 'light-content'}
+        backgroundColor={colors.background}
+      />
       <View style={[styles.topGlow, styles.topGlowOne]} />
       <View style={[styles.topGlow, styles.topGlowTwo]} />
       <View style={[styles.topGlow, styles.topGlowThree]} />
 
       <ScrollView
-        ref={(r) => {
+        ref={r => {
           feedScrollRef.current = r;
         }}
         contentContainerStyle={[
@@ -192,8 +203,17 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity activeOpacity={0.85} style={styles.avatarButton} onPress={() => setModalVisible(true)}>
-            <View style={[styles.avatarShell, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.avatarButton}
+            onPress={() => setModalVisible(true)}
+          >
+            <View
+              style={[
+                styles.avatarShell,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
               {userAvatar ? (
                 <Image source={{ uri: userAvatar }} style={styles.avatarImage} />
               ) : (
@@ -205,7 +225,14 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
-          <BlurView intensity={theme === 'light' ? 0 : 28} tint={theme === 'light' ? "light" : "dark"} style={[styles.searchShell, { backgroundColor: colors.searchBg, borderColor: colors.border }]}>
+          <BlurView
+            intensity={theme === 'light' ? 0 : 28}
+            tint={theme === 'light' ? 'light' : 'dark'}
+            style={[
+              styles.searchShell,
+              { backgroundColor: colors.searchBg, borderColor: colors.border },
+            ]}
+          >
             <Search size={18} color={theme === 'light' ? '#64748B' : '#94A3B8'} strokeWidth={2.2} />
             <TextInput
               placeholder="Search users..."
@@ -221,33 +248,55 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             activeOpacity={0.85}
-            style={[styles.notifButton, { backgroundColor: colors.searchBg, borderColor: colors.border }]}
+            style={[
+              styles.notifButton,
+              { backgroundColor: colors.searchBg, borderColor: colors.border },
+            ]}
             onPress={() => setNotificationsVisible(true)}
             accessibilityRole="button"
             accessibilityLabel="Notifications"
           >
             <Bell size={20} color={colors.textSecondary} strokeWidth={2.2} />
             {unreadNotifications > 0 ? (
-              <View style={[styles.notifBadge, { backgroundColor: colors.bearish, borderColor: colors.card }]}>
-                <Text style={styles.notifBadgeText}>{unreadNotifications > 99 ? '99+' : String(unreadNotifications)}</Text>
+              <View
+                style={[
+                  styles.notifBadge,
+                  { backgroundColor: colors.bearish, borderColor: colors.card },
+                ]}
+              >
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifications > 99 ? '99+' : String(unreadNotifications)}
+                </Text>
               </View>
             ) : null}
           </TouchableOpacity>
         </View>
 
         {userSearching || userResults.length ? (
-          <View style={[styles.userResultsCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <View
+            style={[
+              styles.userResultsCard,
+              { borderColor: colors.border, backgroundColor: colors.card },
+            ]}
+          >
             {userSearching ? (
-              <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>Searching…</Text>
+              <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>
+                Searching…
+              </Text>
             ) : null}
-            {userResults.map((u) => (
+            {userResults.map(u => (
               <TouchableOpacity
                 key={u._id}
                 activeOpacity={0.85}
                 style={[styles.userRow, { borderTopColor: colors.border }]}
                 onPress={() => openPublicProfile(u.userId)}
               >
-                <View style={[styles.userAvatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
+                <View
+                  style={[
+                    styles.userAvatar,
+                    { borderColor: colors.border, backgroundColor: colors.searchBg },
+                  ]}
+                >
                   {u.profilePhoto ? (
                     <Image source={{ uri: u.profilePhoto }} style={styles.userAvatarImg} />
                   ) : (
@@ -258,7 +307,9 @@ export default function HomeScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.userName, { color: colors.text }]}>{u.userId}</Text>
-                  <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@{u.userId}</Text>
+                  <Text style={[styles.userHandle, { color: colors.textSecondary }]}>
+                    @{u.userId}
+                  </Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -266,15 +317,34 @@ export default function HomeScreen() {
         ) : null}
 
         {postsState.error ? (
-          <View style={[styles.errorBanner, { borderColor: colors.border, backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)' }]}> 
-            <Text style={[styles.errorText, { color: theme === 'light' ? '#B91C1C' : colors.bearish }]}>{postsState.error}</Text>
+          <View
+            style={[
+              styles.errorBanner,
+              {
+                borderColor: colors.border,
+                backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)',
+              },
+            ]}
+          >
+            <Text
+              style={[styles.errorText, { color: theme === 'light' ? '#B91C1C' : colors.bearish }]}
+            >
+              {postsState.error}
+            </Text>
           </View>
         ) : null}
 
         {!postsState.isLoading && !postsState.error && posts.length === 0 ? (
-          <View style={[styles.emptyState, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <View
+            style={[
+              styles.emptyState,
+              { borderColor: colors.border, backgroundColor: colors.card },
+            ]}
+          >
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No posts yet</Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Go to “Post Your Opinion” and publish your first post.</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Go to “Post Your Opinion” and publish your first post.
+            </Text>
           </View>
         ) : null}
 
@@ -282,14 +352,13 @@ export default function HomeScreen() {
           <OpinionCard
             key={post._id}
             post={post}
-            onOpenComments={(postId) => setCommentsForPostId(postId)}
-            onOpenProfile={(userId) => openPublicProfile(userId)}
+            onOpenComments={postId => setCommentsForPostId(postId)}
+            onOpenProfile={userId => openPublicProfile(userId)}
             onReportPost={() => setReportingPost(post)}
             currentUserId={currentUserId}
             currentUserHandle={currentUserHandle}
           />
         ))}
-
       </ScrollView>
       <ProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} />
       <NotificationsModal
@@ -341,13 +410,19 @@ function OpinionCard({
   const commentCount = Number(post.commentCount) || 0;
   const isLiked = Boolean(post.isLiked);
 
-  const mediaUrls = useMemo(() => (post.mediaUrls || []).filter(Boolean).slice(0, 5), [post.mediaUrls]);
+  const mediaUrls = useMemo(
+    () => (post.mediaUrls || []).filter(Boolean).slice(0, 5),
+    [post.mediaUrls]
+  );
   const carouselRef = useRef<ScrollView | null>(null);
   const [carouselWidth, setCarouselWidth] = useState(0);
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   const displayName = useMemo(() => post.author?.userId || 'Trader', [post.author?.userId]);
-  const handle = useMemo(() => (post.author?.userId ? `@${post.author.userId}` : '@trader'), [post.author?.userId]);
+  const handle = useMemo(
+    () => (post.author?.userId ? `@${post.author.userId}` : '@trader'),
+    [post.author?.userId]
+  );
   const avatarUrl = post.author?.profilePhoto;
   const authorUserId = post.author?.userId;
   const canReport = useMemo(() => {
@@ -356,7 +431,9 @@ function OpinionCard({
     const myId = String(currentUserId || '').trim();
     const myHandle = String(currentUserHandle || '').trim();
     const isOwnById = Boolean(myId && authorId && myId === authorId);
-    const isOwnByHandle = Boolean(myHandle && authorHandle && myHandle.toLowerCase() === authorHandle.toLowerCase());
+    const isOwnByHandle = Boolean(
+      myHandle && authorHandle && myHandle.toLowerCase() === authorHandle.toLowerCase()
+    );
     return !(isOwnById || isOwnByHandle);
   }, [currentUserHandle, currentUserId, post.author?._id, post.author?.userId]);
   const createdAt = useMemo(() => {
@@ -384,7 +461,18 @@ function OpinionCard({
 
   return (
     <View style={[styles.cardShell, theme === 'light' && styles.cardLightShadow]}>
-      <BlurView intensity={theme === 'light' ? 0 : 22} tint={theme === 'light' ? "light" : "dark"} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: theme === 'light' ? 0 : 1 }]}>
+      <BlurView
+        intensity={theme === 'light' ? 0 : 22}
+        tint={theme === 'light' ? 'light' : 'dark'}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth: theme === 'light' ? 0 : 1,
+          },
+        ]}
+      >
         <View style={styles.cardTopRow}>
           <TouchableOpacity
             style={styles.identityRow}
@@ -395,15 +483,25 @@ function OpinionCard({
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={styles.cardAvatarImage} />
               ) : (
-                <View style={[styles.cardAvatarFallback, { backgroundColor: theme === 'light' ? '#F1F5F9' : '#1E293B' }]}>
-                  <Text style={[styles.cardAvatarText, { color: colors.text }]}>{getInitials(displayName)}</Text>
+                <View
+                  style={[
+                    styles.cardAvatarFallback,
+                    { backgroundColor: theme === 'light' ? '#F1F5F9' : '#1E293B' },
+                  ]}
+                >
+                  <Text style={[styles.cardAvatarText, { color: colors.text }]}>
+                    {getInitials(displayName)}
+                  </Text>
                 </View>
               )}
             </View>
 
             <View style={styles.identityCopy}>
               <Text style={[styles.cardName, { color: colors.text }]}>{displayName}</Text>
-              <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>{handle}{createdAt ? ` · ${createdAt}` : ''}</Text>
+              <Text style={[styles.cardHandle, { color: colors.textSecondary }]}>
+                {handle}
+                {createdAt ? ` · ${createdAt}` : ''}
+              </Text>
             </View>
           </TouchableOpacity>
 
@@ -413,8 +511,14 @@ function OpinionCard({
                 style={[
                   styles.sentimentBadge,
                   bullish
-                    ? { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.2)' }
-                    : { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.2)' },
+                    ? {
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        borderColor: 'rgba(16, 185, 129, 0.2)',
+                      }
+                    : {
+                        backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                        borderColor: 'rgba(244, 63, 94, 0.2)',
+                      },
                 ]}
               >
                 {bullish ? (
@@ -422,7 +526,12 @@ function OpinionCard({
                 ) : (
                   <TrendingDown size={15} color={colors.bearish} strokeWidth={2.6} />
                 )}
-                <Text style={[styles.sentimentText, bullish ? { color: colors.bullish } : { color: colors.bearish }]}>
+                <Text
+                  style={[
+                    styles.sentimentText,
+                    bullish ? { color: colors.bullish } : { color: colors.bearish },
+                  ]}
+                >
                   {sentiment.toUpperCase()}
                 </Text>
               </View>
@@ -432,7 +541,10 @@ function OpinionCard({
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={onReportPost}
-                style={[styles.reportBtn, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                style={[
+                  styles.reportBtn,
+                  { borderColor: colors.border, backgroundColor: colors.searchBg },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Report post"
               >
@@ -449,26 +561,33 @@ function OpinionCard({
         {!!mediaUrls.length && (
           <View style={styles.mediaSection}>
             {mediaUrls.length === 1 ? (
-              <View style={[styles.mediaSingleWrap, { borderColor: colors.border }]}> 
-                <Image source={{ uri: mediaUrls[0] }} style={styles.mediaSingleImage} resizeMode="cover" />
+              <View style={[styles.mediaSingleWrap, { borderColor: colors.border }]}>
+                <Image
+                  source={{ uri: mediaUrls[0] }}
+                  style={styles.mediaSingleImage}
+                  resizeMode="cover"
+                />
               </View>
             ) : (
               <View
-                style={[styles.carouselWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
-                onLayout={(e) => {
+                style={[
+                  styles.carouselWrap,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                ]}
+                onLayout={e => {
                   const w = Math.floor(e.nativeEvent.layout.width);
                   if (w && w !== carouselWidth) setCarouselWidth(w);
                 }}
               >
                 <ScrollView
-                  ref={(r) => {
+                  ref={r => {
                     carouselRef.current = r;
                   }}
                   horizontal
                   pagingEnabled
                   showsHorizontalScrollIndicator={false}
                   scrollEventThrottle={16}
-                  onMomentumScrollEnd={(e) => {
+                  onMomentumScrollEnd={e => {
                     if (!carouselWidth) return;
                     const x = e.nativeEvent.contentOffset.x;
                     const idx = Math.round(x / carouselWidth);
@@ -476,14 +595,25 @@ function OpinionCard({
                   }}
                 >
                   {mediaUrls.map((url, idx) => (
-                    <View key={`${url}_${idx}`} style={{ width: carouselWidth || Dimensions.get('window').width }}>
-                      <Image source={{ uri: url }} style={styles.carouselImage} resizeMode="cover" />
+                    <View
+                      key={`${url}_${idx}`}
+                      style={{ width: carouselWidth || Dimensions.get('window').width }}
+                    >
+                      <Image
+                        source={{ uri: url }}
+                        style={styles.carouselImage}
+                        resizeMode="cover"
+                      />
                     </View>
                   ))}
                 </ScrollView>
 
                 <TouchableOpacity
-                  style={[styles.carouselArrow, styles.carouselArrowLeft, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  style={[
+                    styles.carouselArrow,
+                    styles.carouselArrowLeft,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
                   activeOpacity={0.85}
                   onPress={goPrev}
                   disabled={carouselIndex <= 0}
@@ -491,7 +621,11 @@ function OpinionCard({
                   <ChevronLeft size={18} color={colors.text} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.carouselArrow, styles.carouselArrowRight, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  style={[
+                    styles.carouselArrow,
+                    styles.carouselArrowRight,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
                   activeOpacity={0.85}
                   onPress={goNext}
                   disabled={carouselIndex >= mediaUrls.length - 1}
@@ -518,7 +652,9 @@ function OpinionCard({
               fill={isLiked ? colors.bearish : 'transparent'}
               strokeWidth={2.2}
             />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{likeCount}</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>
+              {likeCount}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.engagementItem}
@@ -526,7 +662,9 @@ function OpinionCard({
             onPress={() => onOpenComments(post._id)}
           >
             <MessageCircle size={18} color={colors.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>{commentCount}</Text>
+            <Text style={[styles.engagementText, { color: colors.textSecondary }]}>
+              {commentCount}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.engagementItem}
@@ -546,9 +684,15 @@ function OpinionCard({
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.disclaimerBox, { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' }]}>
+        <View
+          style={[
+            styles.disclaimerBox,
+            { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' },
+          ]}
+        >
           <Text style={[styles.disclaimerText, { color: colors.disclaimer }]}>
-            This post is my opinion, not a suggestion. Consult a SEBI registered advisor before investing.
+            This post is my opinion, not a suggestion. Consult a SEBI registered advisor before
+            investing.
           </Text>
         </View>
       </BlurView>
@@ -562,7 +706,9 @@ function HighlightedText({ text }: { text: string }) {
 
   const tokens = useMemo(() => {
     const regex = /([@#$][A-Za-z0-9_]{1,32})/g;
-    return String(text || '').split(regex).filter((t) => t.length > 0);
+    return String(text || '')
+      .split(regex)
+      .filter(t => t.length > 0);
   }, [text]);
 
   return (
@@ -577,7 +723,9 @@ function HighlightedText({ text }: { text: string }) {
             key={`${idx}-h`}
             style={[
               styles.highlightToken,
-              { color: isMention ? colors.verifiedBlue : isStock ? colors.bearish : colors.bullish },
+              {
+                color: isMention ? colors.verifiedBlue : isStock ? colors.bearish : colors.bullish,
+              },
             ]}
             onPress={
               isTag
@@ -598,10 +746,7 @@ function HighlightedText({ text }: { text: string }) {
 }
 
 function getInitials(name: string) {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = name.trim().split(/\s+/).filter(Boolean);
 
   if (parts.length === 0) {
     return 'VT';
@@ -609,7 +754,7 @@ function getInitials(name: string) {
 
   return parts
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
+    .map(part => part[0]?.toUpperCase() ?? '')
     .join('');
 }
 
@@ -1200,4 +1345,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
