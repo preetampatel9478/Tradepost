@@ -69,6 +69,46 @@ router.get('/me', auth, async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
+// Friends (Union of Followers and Following)
+router.get('/me/friends', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const skip = Math.max(0, Number(req.query.skip) || 0);
+
+    const me = await User.findById(req.userId).select('+followers +following');
+    if (!me) return next(createError(404, 'User not found'));
+
+    const followingStrs = ((me as any).following as any[] || []).map(id => id.toString());
+    const followerStrs = ((me as any).followers as any[] || []).map(id => id.toString());
+    
+    // Union both arrays to get a complete list of friends
+    const allFriends = Array.from(new Set([...followingStrs, ...followerStrs]));
+
+    const pagedIds = allFriends.slice(skip, skip + limit);
+    const populated = await User.find({ _id: { $in: pagedIds } }).select('_id userId name profilePhoto');
+
+    const items = populated.map((u: any) => ({
+      id: u._id,
+      userId: u.userId,
+      name: u.name || '',
+      avatar: u.profilePhoto,
+      isFollowing: true,
+      isFollower: true,
+    }));
+
+    res.json({
+      success: true,
+      items,
+      hasMore: skip + limit < allFriends.length,
+      totalFriends: allFriends.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Current user's followers list
 router.get('/me/followers', auth, async (req: AuthenticatedRequest, res, next) => {
   try {

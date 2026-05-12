@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -69,6 +70,9 @@ export default function ChatScreen() {
 
   const [conversations, setConversations] = useState<ChatListItem[]>([]);
   const [convosLoading, setConvosLoading] = useState(false);
+
+  const [friends, setFriends] = useState<SocialUser[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
 
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -145,8 +149,12 @@ export default function ChatScreen() {
 
   const fetchConversations = useCallback(async () => {
     setConvosLoading(true);
+    setFriendsLoading(true);
     try {
-      const res = await api.get('/chat/list');
+      const [res, friendsRes] = await Promise.all([
+        api.get('/chat/list').catch(() => ({ data: { items: [] } })),
+        api.get('/users/me/friends').catch(() => ({ data: { items: [] } }))
+      ]);
       const items = ((res.data?.items as any[]) || [])
         .map((c: any): ChatListItem => {
           const peer = c?.peer
@@ -168,12 +176,25 @@ export default function ChatScreen() {
         .filter((c: ChatListItem) => Boolean(c.conversationId) && Boolean(c.peer?.id));
 
       setConversations(items);
+
+      const fItems = ((friendsRes as any).data?.items as any[] || [])
+        .map((u: any): SocialUser => ({
+          id: String(u?.id || ''),
+          userId: String(u?.userId || ''),
+          name: typeof u?.name === 'string' && u.name.trim() ? String(u.name) : String(u?.userId || ''),
+          avatar: u?.avatar ? String(u.avatar) : '',
+        }))
+        .filter((u: SocialUser) => u.id && u.id !== myId);
+      
+      setFriends(fItems);
     } catch {
       setConversations([]);
+      setFriends([]);
     } finally {
       setConvosLoading(false);
+      setFriendsLoading(false);
     }
-  }, []);
+  }, [myId]);
 
   const openThread = useCallback(async (peer: SocialUser) => {
     setActivePeer(peer);
@@ -260,14 +281,13 @@ export default function ChatScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
-
-  useEffect(() => {
-    if (activePeer) return;
-    fetchConversations();
-  }, [activePeer, fetchConversations]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!activePeer) {
+        fetchConversations();
+      }
+    }, [activePeer, fetchConversations])
+  );
 
   useEffect(() => {
     if (!activePeer) return;
@@ -474,27 +494,66 @@ export default function ChatScreen() {
                 showsVerticalScrollIndicator={false}
               />
             )
-          ) : convosLoading ? (
+          ) : convosLoading && conversations.length === 0 ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.verifiedBlue} />
               <Text style={[styles.hint, { color: colors.textSecondary, marginTop: 10 }]}>Loading…</Text>
-            </View>
-          ) : conversations.length === 0 ? (
-            <View style={styles.centerState}>
-              <Text style={[styles.hint, { color: colors.textSecondary }]}>No chats yet.</Text>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={fetchConversations}
-                style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-              >
-                <Text style={[styles.refreshText, { color: colors.text }]}>Refresh</Text>
-              </TouchableOpacity>
             </View>
           ) : (
             <FlatList
               data={conversations}
               keyExtractor={(c, idx) => `${c.conversationId}-${idx}`}
               renderItem={renderConversation}
+              ListHeaderComponent={
+                <>
+                  {friends.length > 0 && (
+                    <View style={styles.friendsSection}>
+                      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Friends</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.friendsScroll}
+                      >
+                        {friends.map((f, idx) => (
+                          <TouchableOpacity
+                            key={`${f.id}-${idx}`}
+                            activeOpacity={0.8}
+                            onPress={() => openThread(f)}
+                            style={styles.friendBubble}
+                          >
+                            <View style={[styles.friendAvatarWrap, { borderColor: colors.border }]}>
+                              {f.avatar ? (
+                                <Image source={{ uri: f.avatar }} style={styles.friendAvatarImg} />
+                              ) : (
+                                <View style={[styles.friendAvatarFallback, { backgroundColor: colors.searchBg }]}>
+                                  <Text style={[styles.friendAvatarText, { color: colors.textSecondary }]}>
+                                    {(f.name || f.userId || '?').charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.friendName, { color: colors.text }]} numberOfLines={1}>
+                              {f.name || f.userId}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                  {conversations.length === 0 && !convosLoading && (
+                    <View style={styles.centerState}>
+                      <Text style={[styles.hint, { color: colors.textSecondary }]}>No chats yet.</Text>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={fetchConversations}
+                        style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: colors.searchBg, marginTop: 12 }]}
+                      >
+                        <Text style={[styles.refreshText, { color: colors.text }]}>Refresh</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              }
               contentContainerStyle={{ paddingBottom: tabBarOffset + 18 }}
               showsVerticalScrollIndicator={false}
             />
@@ -614,6 +673,60 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  friendsSection: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(150, 150, 150, 0.1)',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  friendsScroll: {
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  friendBubble: {
+    alignItems: 'center',
+    marginRight: 16,
+    width: 64,
+  },
+  friendAvatarWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  friendAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  friendAvatarFallback: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendAvatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  friendName: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
   },
