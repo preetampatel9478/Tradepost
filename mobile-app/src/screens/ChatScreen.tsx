@@ -8,7 +8,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +25,7 @@ import { useAppSelector } from '../hooks/reduxHooks';
 import { getAuthedSocket } from '../services/socket';
 import { resetUnread } from '../store/slices/chatSlice';
 import { useAppDispatch } from '../hooks/reduxHooks';
+import PublicProfileModal from '../components/common/PublicProfileModal';
 
 type SocialUser = { id: string; userId: string; name?: string; avatar?: string };
 type ChatMessage = {
@@ -67,9 +67,9 @@ export default function ChatScreen() {
   const dispatch = useAppDispatch();
 
   // Messages tab uses a transparent GlobalHeader. Push our content below it.
-  const headerOffset = useMemo(() => Math.max(insets.top, 24) + 64, [insets.top]);
+  const headerOffset = useMemo(() => Math.max(insets.top, 16), [insets.top]);
   // Tab bar is absolute-positioned in RootNavigator: bottom(14) + height(72)
-  const tabBarOffset = useMemo(() => 14 + 72 + Math.max(insets.bottom, 0), [insets.bottom]);
+  const tabBarOffset = 14 + 72;
   const bottomInset = useMemo(() => Math.max(insets.bottom, 0), [insets.bottom]);
 
   const [conversations, setConversations] = useState<ChatListItem[]>([]);
@@ -86,6 +86,7 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -481,12 +482,11 @@ export default function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {!activePeer ? (
-        <View style={[styles.pad, { paddingTop: headerOffset + 12 }]}>
+        <View style={[styles.pad, { paddingTop: headerOffset }]}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your recent chats.</Text>
           </View>
 
           <BlurView
@@ -599,7 +599,7 @@ export default function ChatScreen() {
               styles.threadWrap,
               {
                 paddingTop: headerOffset,
-                paddingBottom: keyboardVisible ? bottomInset : tabBarOffset,
+                paddingBottom: keyboardVisible ? 12 : tabBarOffset + 8,
               },
             ]}
           >
@@ -615,14 +615,18 @@ export default function ChatScreen() {
               >
                 <ArrowLeft size={18} color={colors.text} />
               </TouchableOpacity>
-              <View style={{ flex: 1 }}>
+              <TouchableOpacity 
+                style={{ flex: 1 }} 
+                activeOpacity={0.8}
+                onPress={() => setShowProfileModal(true)}
+              >
                 <Text style={[styles.threadTitle, { color: colors.text }]} numberOfLines={1}>
                   @{activePeer.userId}
                 </Text>
                 <Text style={[styles.threadSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
                   {activePeer.name?.trim() ? activePeer.name : 'Direct message'}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             {threadLoading ? (
@@ -640,7 +644,7 @@ export default function ChatScreen() {
                 renderItem={renderMessage}
                 contentContainerStyle={[
                   styles.msgListPad, 
-                  { paddingBottom: 12, flexGrow: 1, justifyContent: messages.length === 0 ? 'center' : 'flex-end' }
+                  { paddingBottom: 16, flexGrow: 1, justifyContent: messages.length === 0 ? 'center' : 'flex-end' }
                 ]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
@@ -697,24 +701,30 @@ export default function ChatScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
-    </SafeAreaView>
+
+      <PublicProfileModal
+        visible={showProfileModal}
+        userId={activePeer?.userId || null}
+        onClose={() => setShowProfileModal(false)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   friendsSection: {
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(150, 150, 150, 0.1)',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '700',
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    marginBottom: 8,
+    paddingHorizontal: 2,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   friendsScroll: {
     paddingHorizontal: 4,
@@ -761,63 +771,58 @@ const styles = StyleSheet.create({
   },
   pad: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 14,
+    paddingTop: 8,
   },
   header: {
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
   },
   searchShell: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    borderRadius: 16,
+    gap: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  centerState: {
-    paddingTop: 26,
-    alignItems: 'center',
-  },
-  hint: {
     fontSize: 13,
     fontWeight: '700',
   },
+  centerState: {
+    paddingTop: 16,
+    alignItems: 'center',
+  },
+  hint: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   refreshBtn: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
   },
   refreshText: {
     fontWeight: '900',
-    fontSize: 13,
+    fontSize: 12,
   },
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 18,
+    padding: 10,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 10,
-    gap: 12,
+    marginBottom: 8,
+    gap: 10,
   },
   avatar: {
     width: 44,
@@ -837,23 +842,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   personName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '900',
   },
   personHandle: {
-    marginTop: 2,
-    fontSize: 12,
+    marginTop: 1,
+    fontSize: 11,
     fontWeight: '700',
   },
   pill: {
     borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   pillText: {
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 11,
+    fontWeight: '800',
   },
   threadWrap: {
     flex: 1,
@@ -861,15 +866,15 @@ const styles = StyleSheet.create({
   threadHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    gap: 12,
+    gap: 10,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -885,8 +890,7 @@ const styles = StyleSheet.create({
   },
   msgListPad: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    paddingBottom: 90,
+    paddingVertical: 12,
   },
   msgRow: {
     flexDirection: 'row',
@@ -916,32 +920,33 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   timeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   composer: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderTopWidth: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
+    gap: 12,
   },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
+    borderRadius: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    minHeight: 44,
+    minHeight: 42,
     maxHeight: 120,
-    textAlignVertical: 'top',
-    fontWeight: '700',
+    textAlignVertical: 'center',
+    fontWeight: '600',
+    fontSize: 14,
   },
   sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

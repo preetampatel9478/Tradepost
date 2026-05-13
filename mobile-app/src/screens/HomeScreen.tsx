@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Image,
   ScrollView,
@@ -21,6 +22,7 @@ import {
   Flag,
   Heart,
   MessageCircle,
+  MoreHorizontal,
   Rocket,
   Search,
   Share2,
@@ -36,6 +38,7 @@ import ReportPostModal from '../components/common/ReportPostModal';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   fetchPosts,
+  deletePost,
   likePost,
   patchPostEngagement,
   type ApiPost,
@@ -355,6 +358,14 @@ export default function HomeScreen() {
             onOpenComments={postId => setCommentsForPostId(postId)}
             onOpenProfile={userId => openPublicProfile(userId)}
             onReportPost={() => setReportingPost(post)}
+            onDeletePost={async (postId) => {
+              try {
+                await api.delete(`/posts/${postId}`);
+                dispatch(deletePost(postId));
+              } catch (error) {
+                Alert.alert('Error', 'Failed to delete post.');
+              }
+            }}
             currentUserId={currentUserId}
             currentUserHandle={currentUserHandle}
           />
@@ -390,6 +401,7 @@ function OpinionCard({
   onOpenComments,
   onOpenProfile,
   onReportPost,
+  onDeletePost,
   currentUserId,
   currentUserHandle,
 }: {
@@ -397,6 +409,7 @@ function OpinionCard({
   onOpenComments: (postId: string) => void;
   onOpenProfile: (userId: string) => void;
   onReportPost: () => void;
+  onDeletePost?: (postId: string) => void;
   currentUserId: string;
   currentUserHandle: string;
 }) {
@@ -436,6 +449,35 @@ function OpinionCard({
     );
     return !(isOwnById || isOwnByHandle);
   }, [currentUserHandle, currentUserId, post.author?._id, post.author?.userId]);
+
+  const handleOptionsPress = useCallback(() => {
+    if (canReport) {
+      Alert.alert(
+        'Post Options',
+        'What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Report', style: 'destructive', onPress: onReportPost },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Post Options',
+        'Would you like to delete this post?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Delete', 
+            style: 'destructive', 
+            onPress: () => {
+              if (onDeletePost) onDeletePost(post._id);
+            } 
+          },
+        ]
+      );
+    }
+  }, [canReport, onReportPost, onDeletePost, post._id]);
+
   const createdAt = useMemo(() => {
     const d = new Date(post.createdAt);
     if (Number.isNaN(d.getTime())) return '';
@@ -537,20 +579,18 @@ function OpinionCard({
               </View>
             ) : null}
 
-            {canReport ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onReportPost}
-                style={[
-                  styles.reportBtn,
-                  { borderColor: colors.border, backgroundColor: colors.searchBg },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Report post"
-              >
-                <Flag size={16} color={colors.textSecondary} strokeWidth={2.4} />
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleOptionsPress}
+              style={[
+                styles.reportBtn,
+                { borderColor: colors.border, backgroundColor: colors.searchBg },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Post options"
+            >
+              <MoreHorizontal size={16} color={colors.textSecondary} strokeWidth={2.4} />
+            </TouchableOpacity>
           </View>
         </View>
 
