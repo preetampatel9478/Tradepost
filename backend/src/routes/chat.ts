@@ -76,6 +76,7 @@ router.get('/list', auth, async (req: AuthenticatedRequest, res, next) => {
 					: null,
 				lastMessageAt: c.lastMessageAt,
 				lastMessageText: c.lastMessageText || '',
+				lastMessageSender: c.lastMessageSender ? String(c.lastMessageSender) : null,
 			};
 		});
 

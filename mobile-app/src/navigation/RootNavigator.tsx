@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, View } from 'react-native';
-import { useAppSelector } from '../hooks/reduxHooks';
+import { useAppSelector, useAppDispatch } from '../hooks/reduxHooks';
+import { incrementUnread } from '../store/slices/chatSlice';
+import { getAuthedSocket } from '../services/socket';
 import GlobalHeader from '../components/common/GlobalHeader';
 import HomeScreen from '../screens/HomeScreen';
 import StockScreen from '../screens/StockScreen';
@@ -34,6 +36,28 @@ function AuthStack() {
 
 function AppTabs() {
   const { theme, colors } = useTheme();
+  const unreadCount = useAppSelector((state) => state.chat.unreadCount);
+  const dispatch = useAppDispatch();
+  const { user } = useAppSelector((state) => state.auth);
+
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    (async () => {
+      try {
+        const socket = await getAuthedSocket();
+        const handleChatMsg = (msg: any) => {
+          if (String(msg.senderId) !== String(user?.id)) {
+            dispatch(incrementUnread());
+          }
+        };
+        socket.on('chat:message', handleChatMsg);
+        cleanup = () => socket.off('chat:message', handleChatMsg);
+      } catch (err) {}
+    })();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [dispatch, user?.id]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -127,6 +151,12 @@ function AppTabs() {
         component={ChatScreen}
         options={{
           title: 'Messages',
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: '#FF3B30',
+            color: '#FFFFFF',
+            fontSize: 10,
+          }
         }}
       />
     </Tab.Navigator>

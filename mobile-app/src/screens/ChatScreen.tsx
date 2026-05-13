@@ -24,6 +24,8 @@ import api from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppSelector } from '../hooks/reduxHooks';
 import { getAuthedSocket } from '../services/socket';
+import { resetUnread } from '../store/slices/chatSlice';
+import { useAppDispatch } from '../hooks/reduxHooks';
 
 type SocialUser = { id: string; userId: string; name?: string; avatar?: string };
 type ChatMessage = {
@@ -40,6 +42,7 @@ type ChatListItem = {
   peer: SocialUser | null;
   lastMessageAt?: string;
   lastMessageText?: string;
+  lastMessageSender?: string | null;
 };
 
 const formatTime = (isoDate?: string | Date) => {
@@ -61,6 +64,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const me = useAppSelector((s) => s.auth.user);
   const myId = me?.id ? String(me.id) : '';
+  const dispatch = useAppDispatch();
 
   // Messages tab uses a transparent GlobalHeader. Push our content below it.
   const headerOffset = useMemo(() => Math.max(insets.top, 24) + 64, [insets.top]);
@@ -98,6 +102,7 @@ export default function ChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      dispatch(resetUnread());
       // Android hardware back should return to user list when a chat is open.
       const onBackPress = () => {
         if (activePeer) {
@@ -113,7 +118,21 @@ export default function ChatScreen() {
   );
 
   const showSearch = Boolean(query.trim());
-  const listData = useMemo(() => (showSearch ? searchResults : conversations), [conversations, searchResults, showSearch]);
+  const mergedConversations = useMemo(() => {
+    const list = [...conversations];
+    const inConvoId = new Set(list.map(c => c.peer?.id));
+    
+    friends.forEach(f => {
+      if (!inConvoId.has(f.id)) {
+        list.push({
+          conversationId: `dummy-${f.id}`,
+          peer: f,
+        });
+      }
+    });
+    return list;
+  }, [conversations, friends]);
+  const listData = useMemo(() => (showSearch ? searchResults : mergedConversations), [mergedConversations, searchResults, showSearch]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -171,6 +190,7 @@ export default function ChatScreen() {
             peer: peer && peer.id ? peer : null,
             lastMessageAt: c?.lastMessageAt ? String(c.lastMessageAt) : undefined,
             lastMessageText: c?.lastMessageText ? String(c.lastMessageText) : undefined,
+            lastMessageSender: c?.lastMessageSender ? String(c.lastMessageSender) : undefined,
           };
         })
         .filter((c: ChatListItem) => Boolean(c.conversationId) && Boolean(c.peer?.id));
@@ -339,6 +359,7 @@ export default function ChatScreen() {
             
             return [...prev, msg];
           });
+          dispatch(resetUnread());
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 0);
         };
         socket.on('chat:message', handlerRef);
@@ -394,14 +415,17 @@ export default function ChatScreen() {
     const displayName = peer.name?.trim() ? peer.name : handle;
     const preview = (item.lastMessageText || '').trim();
     const timeText = formatTime(item.lastMessageAt);
+    
+    // Highlight if the last message exists and was NOT sent by the current user
+    const hasUnreadStyle = item.lastMessageSender && item.lastMessageSender !== myId;
 
     return (
       <TouchableOpacity
         activeOpacity={0.85}
-        style={[styles.personRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+        style={[styles.personRow, { borderColor: colors.border, backgroundColor: hasUnreadStyle ? (theme === 'light' ? '#F0F9FF' : '#1A233A') : colors.card }]}
         onPress={() => openThread(peer)}
       >
-        <View style={[styles.avatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
+        <View style={[styles.avatar, { borderColor: hasUnreadStyle ? colors.verifiedBlue : colors.border, backgroundColor: colors.searchBg, borderWidth: hasUnreadStyle ? 2 : 1 }]}>
           {peer.avatar ? (
             <Image source={{ uri: peer.avatar }} style={styles.avatarImg} />
           ) : (
@@ -410,16 +434,21 @@ export default function ChatScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={[styles.personName, { color: colors.text, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+            <Text style={[styles.personName, { color: colors.text, flex: 1, marginRight: 8, fontWeight: hasUnreadStyle ? '700' : '600' }]} numberOfLines={1}>
               {displayName}
             </Text>
             {timeText ? (
-              <Text style={[styles.timeText, { color: colors.textSecondary }]}>{timeText}</Text>
+              <Text style={[styles.timeText, { color: hasUnreadStyle ? colors.verifiedBlue : colors.textSecondary, fontWeight: hasUnreadStyle ? '600' : '400' }]}>{timeText}</Text>
             ) : null}
           </View>
-          <Text style={[styles.personHandle, { color: colors.textSecondary, marginTop: 4 }]} numberOfLines={2}>
-            {preview ? preview : `Start chatting with @${handle}`}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Text style={[styles.personHandle, { color: hasUnreadStyle ? colors.text : colors.textSecondary, flex: 1, fontWeight: hasUnreadStyle ? '500' : '400' }]} numberOfLines={2}>
+              {preview ? preview : `Start chatting with @${handle}`}
+            </Text>
+            {hasUnreadStyle && (
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.verifiedBlue, marginLeft: 8 }} />
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -494,14 +523,14 @@ export default function ChatScreen() {
                 showsVerticalScrollIndicator={false}
               />
             )
-          ) : convosLoading && conversations.length === 0 ? (
+          ) : convosLoading && mergedConversations.length === 0 ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.verifiedBlue} />
               <Text style={[styles.hint, { color: colors.textSecondary, marginTop: 10 }]}>Loading…</Text>
             </View>
           ) : (
             <FlatList
-              data={conversations}
+              data={mergedConversations}
               keyExtractor={(c, idx) => `${c.conversationId}-${idx}`}
               renderItem={renderConversation}
               ListHeaderComponent={
@@ -540,7 +569,7 @@ export default function ChatScreen() {
                       </ScrollView>
                     </View>
                   )}
-                  {conversations.length === 0 && !convosLoading && (
+                  {mergedConversations.length === 0 && !convosLoading && (
                     <View style={styles.centerState}>
                       <Text style={[styles.hint, { color: colors.textSecondary }]}>No chats yet.</Text>
                       <TouchableOpacity
