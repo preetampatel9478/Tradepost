@@ -94,6 +94,11 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
       const safe = normalizedTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.tags = { $regex: new RegExp(`^${safe}$`, 'i') };
     }
+    
+    if (req.query.hasVideo === 'true') {
+      // Find where mediaUrls array has at least one item matching video extensions
+      filter.mediaUrls = { $regex: /\.(mp4|mov|m4v)(\?.*)?$/i };
+    }
 
     const query = Post.find(filter)
       .populate('author', 'userId profilePhoto')

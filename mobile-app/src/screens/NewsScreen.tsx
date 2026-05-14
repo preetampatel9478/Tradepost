@@ -27,6 +27,7 @@ import { getApiErrorMessage } from '../utils/apiError';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
 import { compressForProduction, prepareForEditing } from '../utils/imageProcessor';
+import { compressVideoForProduction } from '../utils/videoProcessor';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Image as SvgImage, Path } from 'react-native-svg';
@@ -41,6 +42,8 @@ type ComposerMedia = {
   mimeType: string;
   width: number;
   height: number;
+  type?: 'image' | 'video';
+  duration?: number;
 };
 
 type NormalizedPoint = { x: number; y: number };
@@ -151,6 +154,48 @@ export default function ComposePostScreen({ navigation }: any) {
         height: processed.height,
         name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.jpg`,
         mimeType: 'image/jpeg',
+      },
+    ].slice(0, 5));
+  };
+
+  const pickVideoFromLibrary = async () => {
+    if (attachedMedia.length >= 5) {
+      Alert.alert('Limit reached', 'You can attach up to 5 items.');
+      return;
+    }
+
+    const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (libPerm.status !== 'granted') {
+      Alert.alert('Permission needed', 'Gallery permission is required.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      quality: 1,
+      allowsEditing: false,
+    } as any);
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    const durationMs = asset.duration ?? 0;
+    const durationSec = durationMs / 1000;
+    if (durationSec > 35) {
+      Alert.alert('Video too long', 'Please select a video that is 35 seconds or shorter.');
+      return;
+    }
+
+    setAttachedMedia((prev) => [
+      ...prev,
+      {
+        uri: asset.uri,
+        width: asset.width || 0,
+        height: asset.height || 0,
+        name: asset.fileName || `post_video_${Date.now()}.mp4`,
+        mimeType: asset.mimeType || 'video/mp4',
+        type: 'video',
+        duration: durationSec,
       },
     ].slice(0, 5));
   };
@@ -705,17 +750,29 @@ export default function ComposePostScreen({ navigation }: any) {
     const formData = new FormData();
 
     for (const media of attachedMedia.slice(0, 5)) {
-      // Convert to WebP for upload (smaller + consistent).
-      const uploadImage = await compressForProduction(media.uri);
-      formData.append('media', {
-        uri: uploadImage.uri,
-        name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
-        type: 'image/webp',
-      } as any);
+      if (media.type === 'video' || (media.mimeType && media.mimeType.startsWith('video'))) {
+        // Compress video (best-effort). If compressor not installed, original will be returned.
+        const processed = await compressVideoForProduction(media.uri);
+        const name = media.name || `post_video_${Date.now()}.mp4`;
+        formData.append('media', {
+          uri: processed.uri,
+          name,
+          type: media.mimeType || 'video/mp4',
+        } as any);
+      } else {
+        // Convert to WebP for upload (smaller + consistent).
+        const uploadImage = await compressForProduction(media.uri);
+        formData.append('media', {
+          uri: uploadImage.uri,
+          name: `post_${Date.now()}_${Math.floor(Math.random() * 1e9)}.webp`,
+          type: 'image/webp',
+        } as any);
+      }
     }
 
     const res = await api.post('/posts/media', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000, // Important: Increase timeout for large video uploads
     });
 
     const mediaUrls = res?.data?.mediaUrls;
@@ -805,9 +862,18 @@ export default function ComposePostScreen({ navigation }: any) {
               disabled={isPosting}
               activeOpacity={0.85}
             >
-              <Text style={[styles.attachmentText, { color: colors.textSecondary }]}>
+              <Text style={[styles.attachmentText, { color: colors.textSecondary }]}> 
                 {attachedMedia.length ? 'Add Another Image' : 'Select Image'}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.attachmentBtn, { borderColor: colors.border, marginLeft: 10 }]}
+              onPress={pickVideoFromLibrary}
+              disabled={isPosting}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.attachmentText, { color: colors.textSecondary }]}>Select Video (≤35s)</Text>
             </TouchableOpacity>
           </View>
           {!!attachedMedia.length && (
@@ -832,14 +898,20 @@ export default function ComposePostScreen({ navigation }: any) {
                       style={styles.previewImage}
                       resizeMode="contain"
                     />
-                    <TouchableOpacity
-                      onPress={() => openEditorForIndex(idx)}
-                      style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      activeOpacity={0.85}
-                      disabled={isPosting}
-                    >
-                      <Text style={[styles.editBtnText, { color: colors.text }]}>Edit</Text>
-                    </TouchableOpacity>
+                    {m.type === 'video' ? (
+                      <View style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={[styles.editBtnText, { color: colors.text }]}>{m.duration ? `${Math.round(m.duration)}s` : 'Video'}</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => openEditorForIndex(idx)}
+                        style={[styles.editBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        activeOpacity={0.85}
+                        disabled={isPosting}
+                      >
+                        <Text style={[styles.editBtnText, { color: colors.text }]}>Edit</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       onPress={() => removeSelectedImage(idx)}
                       style={[styles.removeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}

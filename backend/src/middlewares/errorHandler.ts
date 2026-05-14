@@ -18,7 +18,7 @@ export function errorHandler(
 
   if (err instanceof multer.MulterError) {
     statusCode = 400;
-    if (err.code === 'LIMIT_FILE_SIZE') message = 'Profile photo is too large (max 5MB)';
+    if (err.code === 'LIMIT_FILE_SIZE') message = 'File is too large (exceeded limit)';
     else message = err.message || 'Upload failed';
   }
 

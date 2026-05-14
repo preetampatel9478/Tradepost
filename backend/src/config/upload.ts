@@ -70,7 +70,7 @@ export const uploadPostMedia = multer({
   storage: postMediaStorage,
   fileFilter: postMediaFilter,
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB per file
+    fileSize: 100 * 1024 * 1024, // 100MB per file
     files: 5,
   },
 });

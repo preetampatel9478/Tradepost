@@ -3,7 +3,7 @@ import {
   Alert,
   Dimensions,
   Image,
-  ScrollView,
+  FlatList,
   Share,
   StatusBar,
   StyleSheet,
@@ -47,13 +47,13 @@ import {
 } from '../store/slices/postSlice';
 import { disconnectSocket, getAuthedSocket } from '../services/socket';
 import api from '../services/api';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
 
 export default function HomeScreen() {
   const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const feedScrollRef = useRef<ScrollView | null>(null);
+  const feedScrollRef = useRef<FlatList | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -69,9 +69,24 @@ export default function HomeScreen() {
   const currentUserId = user?.id ? String(user.id) : '';
   const currentUserHandle = user?.userId ? String(user.userId) : '';
   const postsState = useAppSelector(state => state.posts);
-  const { theme, colors } = useTheme();
+  const isFocused = useIsFocused();
 
-  const isLoadingRef = useRef(false);
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems && viewableItems.length > 0) {
+      // Find the first viewable item that is a post
+      const firstPost = viewableItems.find((v: any) => v.item && v.item._id);
+      if (firstPost) {
+        setActiveVideoId(firstPost.item._id);
+      }
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 40
+  }).current;
+
   useEffect(() => {
     isLoadingRef.current = postsState.isLoading;
   }, [postsState.isLoading]);
@@ -193,10 +208,14 @@ export default function HomeScreen() {
       <View style={[styles.topGlow, styles.topGlowTwo]} />
       <View style={[styles.topGlow, styles.topGlowThree]} />
 
-      <ScrollView
+      <FlatList
         ref={r => {
           feedScrollRef.current = r;
         }}
+        data={posts}
+        keyExtractor={(item) => item._id}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         contentContainerStyle={[
           styles.container,
           {
@@ -205,157 +224,159 @@ export default function HomeScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.headerRow}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={styles.avatarButton}
-            onPress={() => setModalVisible(true)}
-          >
-            <View
-              style={[
-                styles.avatarShell,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              {userAvatar ? (
-                <Image source={{ uri: userAvatar }} style={styles.avatarImage} />
-              ) : (
-                <Text style={[styles.avatarInitials, { color: colors.text }]}>{userInitials}</Text>
-              )}
-              <View style={[styles.activeDotGlow, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                <View style={[styles.activeDot, { borderColor: colors.card }]} />
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          <BlurView
-            intensity={theme === 'light' ? 0 : 28}
-            tint={theme === 'light' ? 'light' : 'dark'}
-            style={[
-              styles.searchShell,
-              { backgroundColor: colors.searchBg, borderColor: colors.border },
-            ]}
-          >
-            <Search size={18} color={theme === 'light' ? '#64748B' : '#94A3B8'} strokeWidth={2.2} />
-            <TextInput
-              placeholder="Search users..."
-              placeholderTextColor={theme === 'light' ? '#64748B' : '#94A3B8'}
-              style={[styles.searchInput, { color: colors.text }]}
-              value={userQuery}
-              onChangeText={setUserQuery}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-          </BlurView>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={[
-              styles.notifButton,
-              { backgroundColor: colors.searchBg, borderColor: colors.border },
-            ]}
-            onPress={() => setNotificationsVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Bell size={20} color={colors.textSecondary} strokeWidth={2.2} />
-            {unreadNotifications > 0 ? (
-              <View
-                style={[
-                  styles.notifBadge,
-                  { backgroundColor: colors.bearish, borderColor: colors.card },
-                ]}
-              >
-                <Text style={styles.notifBadgeText}>
-                  {unreadNotifications > 99 ? '99+' : String(unreadNotifications)}
-                </Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
-        </View>
-
-        {userSearching || userResults.length ? (
-          <View
-            style={[
-              styles.userResultsCard,
-              { borderColor: colors.border, backgroundColor: colors.card },
-            ]}
-          >
-            {userSearching ? (
-              <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>
-                Searching…
-              </Text>
-            ) : null}
-            {userResults.map(u => (
+        ListHeaderComponent={
+          <>
+            <View style={styles.headerRow}>
               <TouchableOpacity
-                key={u._id}
                 activeOpacity={0.85}
-                style={[styles.userRow, { borderTopColor: colors.border }]}
-                onPress={() => openPublicProfile(u.userId)}
+                style={styles.avatarButton}
+                onPress={() => setModalVisible(true)}
               >
                 <View
                   style={[
-                    styles.userAvatar,
-                    { borderColor: colors.border, backgroundColor: colors.searchBg },
+                    styles.avatarShell,
+                    { backgroundColor: colors.card, borderColor: colors.border },
                   ]}
                 >
-                  {u.profilePhoto ? (
-                    <Image source={{ uri: u.profilePhoto }} style={styles.userAvatarImg} />
+                  {userAvatar ? (
+                    <Image source={{ uri: userAvatar }} style={styles.avatarImage} />
                   ) : (
-                    <Text style={[styles.userAvatarFallback, { color: colors.text }]}>
-                      {(u.userId || 'T').slice(0, 1).toUpperCase()}
-                    </Text>
+                    <Text style={[styles.avatarInitials, { color: colors.text }]}>{userInitials}</Text>
                   )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.userName, { color: colors.text }]}>{u.userId}</Text>
-                  <Text style={[styles.userHandle, { color: colors.textSecondary }]}>
-                    @{u.userId}
-                  </Text>
+                  <View style={[styles.activeDotGlow, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                    <View style={[styles.activeDot, { borderColor: colors.card }]} />
+                  </View>
                 </View>
               </TouchableOpacity>
-            ))}
-          </View>
-        ) : null}
 
-        {postsState.error ? (
-          <View
-            style={[
-              styles.errorBanner,
-              {
-                borderColor: colors.border,
-                backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)',
-              },
-            ]}
-          >
-            <Text
-              style={[styles.errorText, { color: theme === 'light' ? '#B91C1C' : colors.bearish }]}
-            >
-              {postsState.error}
-            </Text>
-          </View>
-        ) : null}
+              <BlurView
+                intensity={theme === 'light' ? 0 : 28}
+                tint={theme === 'light' ? 'light' : 'dark'}
+                style={[
+                  styles.searchShell,
+                  { backgroundColor: colors.searchBg, borderColor: colors.border },
+                ]}
+              >
+                <Search size={18} color={theme === 'light' ? '#64748B' : '#94A3B8'} strokeWidth={2.2} />
+                <TextInput
+                  placeholder="Search users..."
+                  placeholderTextColor={theme === 'light' ? '#64748B' : '#94A3B8'}
+                  style={[styles.searchInput, { color: colors.text }]}
+                  value={userQuery}
+                  onChangeText={setUserQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+              </BlurView>
 
-        {!postsState.isLoading && !postsState.error && posts.length === 0 ? (
-          <View
-            style={[
-              styles.emptyState,
-              { borderColor: colors.border, backgroundColor: colors.card },
-            ]}
-          >
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No posts yet</Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Go to “Post Your Opinion” and publish your first post.
-            </Text>
-          </View>
-        ) : null}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.notifButton,
+                  { backgroundColor: colors.searchBg, borderColor: colors.border },
+                ]}
+                onPress={() => setNotificationsVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Notifications"
+              >
+                <Bell size={20} color={colors.textSecondary} strokeWidth={2.2} />
+                {unreadNotifications > 0 ? (
+                  <View
+                    style={[
+                      styles.notifBadge,
+                      { backgroundColor: colors.bearish, borderColor: colors.card },
+                    ]}
+                  >
+                    <Text style={styles.notifBadgeText}>
+                      {unreadNotifications > 99 ? '99+' : String(unreadNotifications)}
+                    </Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            </View>
 
-        {posts.map((post: ApiPost) => (
+            {userSearching || userResults.length ? (
+              <View
+                style={[
+                  styles.userResultsCard,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                ]}
+              >
+                {userSearching ? (
+                  <Text style={[styles.userResultsHint, { color: colors.textSecondary }]}>
+                    Searching…
+                  </Text>
+                ) : null}
+                {userResults.map(u => (
+                  <TouchableOpacity
+                    key={u._id}
+                    activeOpacity={0.85}
+                    style={[styles.userRow, { borderTopColor: colors.border }]}
+                    onPress={() => openPublicProfile(u.userId)}
+                  >
+                    <View
+                      style={[
+                        styles.userAvatar,
+                        { borderColor: colors.border, backgroundColor: colors.searchBg },
+                      ]}
+                    >
+                      {u.profilePhoto ? (
+                        <Image source={{ uri: u.profilePhoto }} style={styles.userAvatarImg} />
+                      ) : (
+                        <Text style={[styles.userAvatarFallback, { color: colors.text }]}>
+                          {(u.userId || 'T').slice(0, 1).toUpperCase()}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.userName, { color: colors.text }]}>{u.userId}</Text>
+                      <Text style={[styles.userHandle, { color: colors.textSecondary }]}>
+                        @{u.userId}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            {postsState.error ? (
+              <View
+                style={[
+                  styles.errorBanner,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: theme === 'light' ? '#FEF2F2' : 'rgba(244, 63, 94, 0.08)',
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.errorText, { color: theme === 'light' ? '#B91C1C' : colors.bearish }]}
+                >
+                  {postsState.error}
+                </Text>
+              </View>
+            ) : null}
+
+            {!postsState.isLoading && !postsState.error && posts.length === 0 ? (
+              <View
+                style={[
+                  styles.emptyState,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                ]}
+              >
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No posts yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Go to “Post Your Opinion” and publish your first post.
+                </Text>
+              </View>
+            ) : null}
+          </>
+        }
+        renderItem={({ item: post }) => (
           <OpinionCard
-            key={post._id}
             post={post}
+            isActive={isFocused && activeVideoId === post._id}
             onOpenComments={postId => setCommentsForPostId(postId)}
             onOpenProfile={userId => openPublicProfile(userId)}
             onReportPost={() => setReportingPost(post)}
@@ -370,8 +391,8 @@ export default function HomeScreen() {
             currentUserId={currentUserId}
             currentUserHandle={currentUserHandle}
           />
-        ))}
-      </ScrollView>
+        )}
+      />
       <ProfileModal visible={modalVisible} onClose={() => setModalVisible(false)} />
       <NotificationsModal
         visible={notificationsVisible}

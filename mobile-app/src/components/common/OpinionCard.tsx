@@ -11,11 +11,12 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { ChevronLeft, ChevronRight, Heart, MessageCircle, MoreHorizontal, Rocket, Share2, TrendingDown } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Heart, MessageCircle, MoreHorizontal, Rocket, Share2, TrendingDown, Play } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/reduxHooks';
 import { likePost, unlikePost, type ApiPost } from '../../store/slices/postSlice';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -73,8 +74,58 @@ export function HighlightedText({ text }: { text: string }) {
   );
 }
 
+export function MediaItem({ url, style, isActive = true }: { url: string, style: any, isActive?: boolean }) {
+  const isVideo = url.toLowerCase().match(/\.(mp4|mov|m4v)(\?.*)?$/);
+  
+  const [isPaused, setIsPaused] = useState(false);
+  const [showPlayIcon, setShowPlayIcon] = useState(false);
+
+  const player = useVideoPlayer(url, player => {
+    player.loop = true;
+    if (isActive && !isPaused) player.play();
+  });
+  
+  React.useEffect(() => {
+    if (isActive && !isPaused) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, isPaused, player]);
+
+  const togglePlayPause = () => {
+    setIsPaused(prev => !prev);
+    setShowPlayIcon(true);
+    setTimeout(() => {
+      setShowPlayIcon(false);
+    }, 1000);
+  };
+
+  if (isVideo) {
+    return (
+      <TouchableOpacity activeOpacity={1} style={style} onPress={togglePlayPause}>
+        <VideoView
+          player={player}
+          style={StyleSheet.absoluteFill}
+          allowsFullscreen
+          allowsPictureInPicture
+          nativeControls={false}
+          contentFit="cover"
+        />
+        {showPlayIcon && (
+          <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
+            <Play size={48} color="rgba(255, 255, 255, 0.7)" fill="rgba(255, 255, 255, 0.7)" />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+  return <Image source={{ uri: url }} style={style} resizeMode="cover" />;
+}
+
 export default function OpinionCard({
   post,
+  isActive = true,
   onOpenComments,
   onOpenProfile,
   onReportPost,
@@ -84,6 +135,7 @@ export default function OpinionCard({
   onPostUpdated,
 }: {
   post: ApiPost;
+  isActive?: boolean;
   onOpenComments: (postId: string) => void;
   onOpenProfile: (userId: string) => void;
   onReportPost?: () => void;
@@ -301,11 +353,7 @@ export default function OpinionCard({
           <View style={styles.mediaSection}>
             {mediaUrls.length === 1 ? (
               <View style={[styles.mediaSingleWrap, { borderColor: colors.border }]}>
-                <Image
-                  source={{ uri: mediaUrls[0] }}
-                  style={styles.mediaSingleImage}
-                  resizeMode="cover"
-                />
+                <MediaItem url={mediaUrls[0]} style={styles.mediaSingleImage} isActive={isActive} />
               </View>
             ) : (
               <View
@@ -338,11 +386,7 @@ export default function OpinionCard({
                       key={`${url}_${idx}`}
                       style={{ width: carouselWidth || Dimensions.get('window').width }}
                     >
-                      <Image
-                        source={{ uri: url }}
-                        style={styles.carouselImage}
-                        resizeMode="cover"
-                      />
+                      <MediaItem url={url} style={styles.carouselImage} isActive={isActive && carouselIndex === idx} />
                     </View>
                   ))}
                 </ScrollView>

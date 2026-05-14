@@ -42,7 +42,8 @@
           "icon": "./src/assets/images/notification-icon.png",
           "color": "#00D084"
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {
