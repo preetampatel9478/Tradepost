@@ -43,6 +43,7 @@ type ChatListItem = {
   lastMessageAt?: string;
   lastMessageText?: string;
   lastMessageSender?: string | null;
+  isUnread?: boolean;
 };
 
 const formatTime = (isoDate?: string | Date) => {
@@ -192,6 +193,7 @@ export default function ChatScreen() {
             lastMessageAt: c?.lastMessageAt ? String(c.lastMessageAt) : undefined,
             lastMessageText: c?.lastMessageText ? String(c.lastMessageText) : undefined,
             lastMessageSender: c?.lastMessageSender ? String(c.lastMessageSender) : undefined,
+            isUnread: Boolean(c?.isUnread),
           };
         })
         .filter((c: ChatListItem) => Boolean(c.conversationId) && Boolean(c.peer?.id));
@@ -417,8 +419,8 @@ export default function ChatScreen() {
     const preview = (item.lastMessageText || '').trim();
     const timeText = formatTime(item.lastMessageAt);
     
-    // Highlight if the last message exists and was NOT sent by the current user
-    const hasUnreadStyle = item.lastMessageSender && item.lastMessageSender !== myId;
+    // Highlight if marked unread
+    const hasUnreadStyle = item.isUnread;
 
     return (
       <TouchableOpacity

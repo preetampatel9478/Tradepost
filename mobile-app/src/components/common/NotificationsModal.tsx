@@ -18,7 +18,11 @@ import { useTheme } from '../../contexts/ThemeContext';
 export type ApiNotification = {
   _id: string;
   type: 'like' | 'comment';
-  post?: string | null;
+  post?: {
+    _id: string;
+    content?: string;
+    mediaUrls?: string[];
+  } | string | null;
   comment?: string | null;
   message?: string;
   read?: boolean;
@@ -51,10 +55,14 @@ export default function NotificationsModal({
   visible,
   onClose,
   onMarkedRead,
+  onOpenPost,
+  onOpenProfile,
 }: {
   visible: boolean;
   onClose: () => void;
   onMarkedRead?: () => void;
+  onOpenPost?: (postId: string) => void;
+  onOpenProfile?: (userId: string) => void;
 }) {
   const { theme, colors } = useTheme();
   const [loading, setLoading] = useState(false);
@@ -111,57 +119,87 @@ export default function NotificationsModal({
         : `${displayName} commented on your post`;
     const subtitle = item.type === 'comment' ? String(item.message || '').trim() : '';
 
+    const postObj = typeof item.post === 'object' && item.post ? item.post : null;
+    const postContentSnippet = postObj?.content ? postObj.content.slice(0, 60) + (postObj.content.length > 60 ? '...' : '') : '';
+    const postMediaUrl = postObj?.mediaUrls?.[0] || null;
+
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={async () => {
+          if (!item.read) {
+            try {
+              await api.put(`/notifications/${encodeURIComponent(item._id)}/read`);
+              setItems((prev) => prev.map((n) => (n._id === item._id ? { ...n, read: true } : n)));
+              onMarkedRead?.();
+            } catch {
+              // ignore
+            }
+          }
+          const pId = postObj?._id || (typeof item.post === 'string' ? item.post : null);
+          if (pId) {
+            onOpenPost?.(pId);
+          }
+        }}
         style={[
           styles.row,
           {
-            borderColor: colors.border,
-            backgroundColor: colors.card,
-            opacity: item.read ? 0.72 : 1,
+            borderColor: item.read ? colors.border : colors.verifiedBlue,
+            backgroundColor: item.read ? colors.card : (theme === 'light' ? '#F0F9FF' : '#1A233A'),
+            borderWidth: item.read ? 1 : 1.5,
           },
         ]}
       >
-        <View style={[styles.avatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}> 
-          {actor?.profilePhoto ? (
-            <Image source={{ uri: actor.profilePhoto }} style={styles.avatarImg} />
-          ) : (
-            <Text style={[styles.avatarFallback, { color: colors.text }]}>{handle.slice(0, 1).toUpperCase()}</Text>
-          )}
-        </View>
+        <TouchableOpacity 
+          activeOpacity={0.8}
+          onPress={(e) => {
+            e.stopPropagation();
+            if (actor?.userId) {
+              onOpenProfile?.(actor.userId);
+            }
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <View style={[styles.avatar, { borderColor: item.read ? colors.border : colors.verifiedBlue, backgroundColor: colors.searchBg, borderWidth: item.read ? 1 : 2 }]}> 
+            {actor?.profilePhoto ? (
+              <Image source={{ uri: actor.profilePhoto }} style={styles.avatarImg} />
+            ) : (
+              <Text style={[styles.avatarFallback, { color: colors.text }]}>{handle.slice(0, 1).toUpperCase()}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
 
         <View style={{ flex: 1 }}>
           <View style={styles.rowTop}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
+            <Text style={[styles.title, { color: colors.text, fontWeight: item.read ? '600' : '800' }]} numberOfLines={2}>
               {title}
             </Text>
-            <Text style={[styles.time, { color: colors.textSecondary }]}>{timeAgo(item.createdAt)}</Text>
+            <Text style={[styles.time, { color: item.read ? colors.textSecondary : colors.verifiedBlue, fontWeight: item.read ? '400' : '600' }]}>{timeAgo(item.createdAt)}</Text>
           </View>
           {subtitle ? (
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={2}>
+            <Text style={[styles.subtitle, { color: item.read ? colors.textSecondary : colors.text, fontWeight: item.read ? '400' : '500' }]} numberOfLines={2}>
               {subtitle}
             </Text>
           ) : null}
-
-          {!item.read ? (
-            <TouchableOpacity
-              onPress={async () => {
-                try {
-                  await api.put(`/notifications/${encodeURIComponent(item._id)}/read`);
-                  setItems((prev) => prev.map((n) => (n._id === item._id ? { ...n, read: true } : n)));
-                  onMarkedRead?.();
-                } catch {
-                  // ignore
-                }
-              }}
-              activeOpacity={0.85}
-              style={[styles.markReadBtn, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-            >
-              <Text style={[styles.markReadText, { color: colors.textSecondary }]}>Mark read</Text>
-            </TouchableOpacity>
-          ) : null}
+          
+          {(postContentSnippet || postMediaUrl) && (
+            <View style={[styles.postPreview, { backgroundColor: colors.searchBg, borderColor: colors.border }]}> 
+              {postMediaUrl && (
+                <Image source={{ uri: postMediaUrl }} style={styles.postPreviewImage} />
+              )}
+              {postContentSnippet ? (
+                <Text style={[styles.postPreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                  "{postContentSnippet}"
+                </Text>
+              ) : null}
+            </View>
+          )}
         </View>
-      </View>
+        
+        {!item.read && (
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.verifiedBlue, marginLeft: 8, marginTop: 4 }} />
+        )}
+      </TouchableOpacity>
     );
   };
 
@@ -333,6 +371,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 16,
+  },
+  postPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  postPreviewImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  postPreviewText: {
+    flex: 1,
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   time: {
     fontSize: 11,

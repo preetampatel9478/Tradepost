@@ -17,8 +17,10 @@ import { BlurView } from 'expo-blur';
 import { X } from 'lucide-react-native';
 import api from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useAppDispatch } from '../../hooks/reduxHooks';
+import { useAppDispatch, useAppSelector } from '../../hooks/reduxHooks';
 import { createComment } from '../../store/slices/postSlice';
+import { ApiPost } from '../../store/slices/postSlice';
+import OpinionCard from './OpinionCard';
 
 export interface ApiComment {
   _id: string;
@@ -48,9 +50,13 @@ export function CommentsModal({
   const dispatch = useAppDispatch();
   const { theme, colors } = useTheme();
 
+  const currentUserId = useAppSelector((state) => state.auth.user?.id || '');
+  const currentUserHandle = useAppSelector((state) => state.auth.user?.userId || '');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [comments, setComments] = useState<ApiComment[]>([]);
+  const [postData, setPostData] = useState<ApiPost | null>(null);
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -67,8 +73,14 @@ export function CommentsModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(`/comments/${postId}`);
-      setComments((res.data as ApiComment[]) || []);
+      const [resComments, resPost] = await Promise.all([
+        api.get(`/comments/${postId}`),
+        api.get(`/posts/${postId}`).catch(() => null)
+      ]);
+      setComments((resComments.data as ApiComment[]) || []);
+      if (resPost?.data) {
+        setPostData(resPost.data as ApiPost);
+      }
     } catch (e: any) {
       setError(e?.response?.data?.message || e?.message || 'Failed to load comments');
     } finally {
@@ -87,6 +99,7 @@ export function CommentsModal({
       setReplyTo(null);
       setError(null);
       setComments([]);
+      setPostData(null);
       setLoading(false);
       setSending(false);
     }
@@ -206,6 +219,21 @@ export function CommentsModal({
               data={comments}
               keyExtractor={(c) => c._id}
               renderItem={renderItem}
+              ListHeaderComponent={
+                postData ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <OpinionCard
+                      post={postData}
+                      onOpenComments={() => {}} 
+                      onOpenProfile={() => {}}
+                      onReportPost={() => {}}
+                      currentUserId={currentUserId}
+                      currentUserHandle={currentUserHandle}
+                    />
+                    <View style={{ height: 1, backgroundColor: colors.border, marginTop: 16 }} />
+                  </View>
+                ) : null
+              }
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
             />

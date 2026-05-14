@@ -19,6 +19,7 @@ router.get('/', auth, async (req: AuthenticatedRequest, res, next) => {
       .skip(skip)
       .limit(limit)
       .populate('actor', 'userId name profilePhoto')
+      .populate('post', 'content mediaUrls')
       .select('_id type post comment message read createdAt');
 
     const total = await Notification.countDocuments({ recipient: req.userId });

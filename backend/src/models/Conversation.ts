@@ -40,6 +40,11 @@ const conversationSchema = new Schema(
       ref: 'User',
       default: null,
     },
+    readBy: {
+      type: Map,
+      of: Date,
+      default: {},
+    },
   },
   {
     timestamps: true,

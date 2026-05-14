@@ -251,7 +251,30 @@ router.post('/:postId/report', auth, async (req: AuthenticatedRequest, res, next
     return next(createError(500, 'Server error'));
   }
 });
+// Add a single post fetch
+router.get('/:postId', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { postId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return next(createError(400, 'Invalid post ID'));
+    }
 
+    const post = await Post.findById(postId).populate('author', 'userId name profilePhoto');
+    if (!post) {
+      return next(createError(404, 'Post not found'));
+    }
+
+    const postObj = post.toObject() as any;
+    if (req.userId) {
+      const isLiked = await Post.exists({ _id: post._id, likedBy: req.userId });
+      postObj.isLiked = Boolean(isLiked);
+    }
+
+    return res.json(postObj);
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
 // Update a post (author-only)
 router.put('/:postId', auth, async (req: AuthenticatedRequest, res, next) => {
   try {

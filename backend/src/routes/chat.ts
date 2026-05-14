@@ -77,6 +77,9 @@ router.get('/list', auth, async (req: AuthenticatedRequest, res, next) => {
 				lastMessageAt: c.lastMessageAt,
 				lastMessageText: c.lastMessageText || '',
 				lastMessageSender: c.lastMessageSender ? String(c.lastMessageSender) : null,
+				isUnread: c.lastMessageSender && 
+					String(c.lastMessageSender) !== String(meId) && 
+					(!c.readBy?.[String(meId)] || new Date(c.lastMessageAt) > new Date(c.readBy[String(meId)])),
 			};
 		});
 
@@ -96,6 +99,12 @@ router.get('/:userId', auth, async (req: AuthenticatedRequest, res, next) => {
 		if (String(peer._id) === String(req.userId)) return next(createError(400, 'Cannot chat with yourself'));
 
 		const convo = await getOrCreateDirectConversation(String(req.userId), String(peer._id));
+
+		await Conversation.findByIdAndUpdate(convo._id, {
+			$set: {
+				[`readBy.${req.userId}`]: new Date(),
+			},
+		});
 
 		const raw = await Message.find({ conversation: convo._id })
 			.sort({ createdAt: -1 })
@@ -155,6 +164,7 @@ router.post('/send', auth, async (req: AuthenticatedRequest, res, next) => {
 				lastMessageAt: msg.createdAt,
 				lastMessageText: content.slice(0, 500),
 				lastMessageSender: req.userId,
+				[`readBy.${req.userId}`]: msg.createdAt,
 			},
 		});
 
