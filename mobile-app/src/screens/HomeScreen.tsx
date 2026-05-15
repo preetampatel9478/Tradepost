@@ -50,10 +50,12 @@ import api from '../services/api';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
 
 export default function HomeScreen() {
+  const { colors, theme } = useTheme();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const feedScrollRef = useRef<FlatList | null>(null);
+  const isLoadingRef = useRef(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -92,7 +94,7 @@ export default function HomeScreen() {
   }, [postsState.isLoading]);
 
   const scrollFeedToTop = useCallback((animated: boolean) => {
-    feedScrollRef.current?.scrollTo({ y: 0, animated });
+    feedScrollRef.current?.scrollToOffset({ offset: 0, animated });
   }, []);
 
   const refreshFeed = useCallback(() => {

@@ -23,8 +23,9 @@ export const compressVideoForProduction = async (uri: string): Promise<Processed
       if (result && result.uri) {
         // Try to get file size
         try {
-          const info = await FileSystem.getInfoAsync(result.uri, { size: true });
-          return { uri: result.uri, size: info.size, duration: result.duration } as ProcessedVideo;
+          const info = await FileSystem.getInfoAsync(result.uri);
+          const size = info.exists ? info.size : undefined;
+          return { uri: result.uri, size, duration: result.duration } as ProcessedVideo;
         } catch (e) {
           return { uri: result.uri, duration: result.duration } as ProcessedVideo;
         }

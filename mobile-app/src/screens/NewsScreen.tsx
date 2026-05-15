@@ -194,7 +194,7 @@ export default function ComposePostScreen({ navigation }: any) {
         height: asset.height || 0,
         name: asset.fileName || `post_video_${Date.now()}.mp4`,
         mimeType: asset.mimeType || 'video/mp4',
-        type: 'video',
+        type: 'video' as const,
         duration: durationSec,
       },
     ].slice(0, 5));
