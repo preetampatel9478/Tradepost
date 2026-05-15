@@ -112,12 +112,27 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
     const posts = await query;
 
     const userId = req.userId;
+    let followingIds = new Set<string>();
+    if (userId) {
+      const User = mongoose.models.User;
+      if (User) {
+        const currentUser = await User.findById(userId).select('+following');
+        if (currentUser && Array.isArray(currentUser.following)) {
+          followingIds = new Set(currentUser.following.map((id: any) => String(id)));
+        }
+      }
+    }
+
     return res.json(
       posts.map((p: any) => {
         const likedBy = Array.isArray(p.likedBy) ? p.likedBy.map((id: any) => String(id)) : [];
         const isLiked = userId ? likedBy.includes(String(userId)) : false;
+        const postObj = p.toObject();
+        if (postObj.author && typeof postObj.author === 'object') {
+          postObj.author.isFollowing = followingIds.has(String(postObj.author._id));
+        }
         return {
-          ...p.toObject(),
+          ...postObj,
           likedBy: undefined,
           isLiked,
           likeCount: typeof p.likeCount === 'number' ? p.likeCount : likedBy.length,

@@ -32,7 +32,8 @@ const ShortItem = ({
   onOpenComments,
   onOpenProfile,
   onReport,
-  onToggleLike
+  onToggleLike,
+  onFollow
 }: {
   post: ApiPost;
   isActive: boolean;
@@ -42,11 +43,11 @@ const ShortItem = ({
   onOpenProfile: (id: string) => void;
   onReport: (post: ApiPost) => void;
   onToggleLike: (post: ApiPost) => void;
+  onFollow: (authorId: string, displayName: string) => void;
 }) => {
   const { colors } = useTheme();
   const [isPaused, setIsPaused] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
-  const [localFollowed, setLocalFollowed] = useState(false);
   
   const videoUrl = React.useMemo(() => {
     return post.mediaUrls?.find(url => url.toLowerCase().match(/\.(mp4|mov|m4v)(\?.*)?$/)) || post.mediaUrls?.[0] || '';
@@ -87,16 +88,11 @@ const ShortItem = ({
   const avatarUrl = post.author?.profilePhoto;
 
   const isOwnPost = currentUserHandle === displayName;
+  const isFollowing = Boolean(post.author?.isFollowing);
 
-  const handleInlineFollow = async () => {
-    if (localFollowed || isOwnPost) return;
-    try {
-      setLocalFollowed(true);
-      await api.post(`/users/u/${encodeURIComponent(displayName)}/follow`);
-    } catch (e) {
-      console.error(e);
-      setLocalFollowed(false); // revert on failure
-    }
+  const handleInlineFollow = () => {
+    if (isFollowing || isOwnPost) return;
+    onFollow(post.author?._id || '', displayName);
   };
 
   return (
@@ -163,7 +159,7 @@ const ShortItem = ({
             </TouchableOpacity>
 
             {!isOwnPost && (
-              !localFollowed ? (
+              !isFollowing ? (
                 <TouchableOpacity 
                   style={styles.followButton} 
                   activeOpacity={0.8}
@@ -286,6 +282,26 @@ export default function StockScreen() {
     }
   };
 
+  const handleFollowUser = async (authorId: string, displayName: string) => {
+    try {
+      setPosts(prev => prev.map(p => {
+        if (p.author && (p.author._id === authorId || p.author.userId === displayName)) {
+          return { ...p, author: { ...p.author, isFollowing: true } };
+        }
+        return p;
+      }));
+      await api.post(`/users/u/${encodeURIComponent(displayName)}/follow`);
+    } catch (e) {
+      console.error(e);
+      setPosts(prev => prev.map(p => {
+        if (p.author && (p.author._id === authorId || p.author.userId === displayName)) {
+          return { ...p, author: { ...p.author, isFollowing: false } };
+        }
+        return p;
+      }));
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: '#000' }]}>
       {loading && posts.length === 0 ? (
@@ -323,6 +339,7 @@ export default function StockScreen() {
               onOpenProfile={handleOpenProfile}
               onReport={handleReportPost}
               onToggleLike={handleToggleLike}
+              onFollow={handleFollowUser}
             />
           )}
         />
