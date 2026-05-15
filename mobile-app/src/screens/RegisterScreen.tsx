@@ -3,7 +3,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +12,7 @@ import {
   ScrollView,
   Modal
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, Circle, Shield, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';

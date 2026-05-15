@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,7 +10,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Search } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';

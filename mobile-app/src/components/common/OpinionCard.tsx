@@ -3,6 +3,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -17,6 +18,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAppDispatch } from '../../hooks/reduxHooks';
 import { likePost, unlikePost, type ApiPost } from '../../store/slices/postSlice';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { getValidatedMediaUrl } from '../../utils/mediaHelper';
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -80,18 +82,22 @@ export function MediaItem({ url, style, isActive = true }: { url: string, style:
   const [isPaused, setIsPaused] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
 
-  const player = useVideoPlayer(url, player => {
+  const videoSource = useMemo(() => getValidatedMediaUrl(url), [url]);
+
+  const player = useVideoPlayer(isVideo ? { uri: videoSource } : null, player => {
+    if (!isVideo) return;
     player.loop = true;
     if (isActive && !isPaused) player.play();
   });
   
   React.useEffect(() => {
+    if (!isVideo) return;
     if (isActive && !isPaused) {
       player.play();
     } else {
       player.pause();
     }
-  }, [isActive, isPaused, player]);
+  }, [isVideo, isActive, isPaused, player]);
 
   const togglePlayPause = () => {
     setIsPaused(prev => !prev);
@@ -107,10 +113,11 @@ export function MediaItem({ url, style, isActive = true }: { url: string, style:
         <VideoView
           player={player}
           style={StyleSheet.absoluteFill}
-          allowsFullscreen
+          fullscreenOptions={{ enable: true }}
           allowsPictureInPicture
           nativeControls={false}
           contentFit="cover"
+          surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
         />
         {showPlayIcon && (
           <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">

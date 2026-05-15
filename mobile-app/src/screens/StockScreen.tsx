@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, Text, View, FlatList, ActivityIndicator, RefreshControl, Dimensions, TouchableOpacity, Image, Share, SafeAreaView, Pressable } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View, FlatList, ActivityIndicator, RefreshControl, Dimensions, TouchableOpacity, Image, Share, Pressable, Platform } from 'react-native';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 import { Heart, MessageCircle, Share2, MoreHorizontal, Play } from 'lucide-react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -12,6 +12,7 @@ import PublicProfileModal from '../components/common/PublicProfileModal';
 import ReportPostModal from '../components/common/ReportPostModal';
 import { useAppSelector } from '../hooks/reduxHooks';
 import { BlurView } from 'expo-blur';
+import { getValidatedMediaUrl } from '../utils/mediaHelper';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -27,6 +28,7 @@ const ShortItem = ({
   post,
   isActive,
   insets,
+  currentUserHandle,
   onOpenComments,
   onOpenProfile,
   onReport,
@@ -35,6 +37,7 @@ const ShortItem = ({
   post: ApiPost;
   isActive: boolean;
   insets: any;
+  currentUserHandle?: string;
   onOpenComments: (id: string) => void;
   onOpenProfile: (id: string) => void;
   onReport: (post: ApiPost) => void;
@@ -43,23 +46,30 @@ const ShortItem = ({
   const { colors } = useTheme();
   const [isPaused, setIsPaused] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
+  const [localFollowed, setLocalFollowed] = useState(false);
   
   const videoUrl = React.useMemo(() => {
     return post.mediaUrls?.find(url => url.toLowerCase().match(/\.(mp4|mov|m4v)(\?.*)?$/)) || post.mediaUrls?.[0] || '';
   }, [post.mediaUrls]);
 
-  const player = useVideoPlayer(videoUrl, p => {
+  const videoSource = React.useMemo(() => {
+    return getValidatedMediaUrl(videoUrl);
+  }, [videoUrl]);
+
+  const player = useVideoPlayer(videoSource ? { uri: videoSource } : null, p => {
+    if (!videoSource) return;
     p.loop = true;
     if (isActive && !isPaused) p.play();
   });
 
   useEffect(() => {
+    if (!videoSource) return;
     if (isActive && !isPaused) {
       player.play();
     } else {
       player.pause();
     }
-  }, [isActive, isPaused, player]);
+  }, [videoSource, isActive, isPaused, player]);
 
   const togglePlayPause = () => {
     setIsPaused(prev => !prev);
@@ -76,16 +86,29 @@ const ShortItem = ({
   const displayName = post.author?.userId || 'Trader';
   const avatarUrl = post.author?.profilePhoto;
 
+  const isOwnPost = currentUserHandle === displayName;
+
+  const handleInlineFollow = async () => {
+    if (localFollowed || isOwnPost) return;
+    try {
+      setLocalFollowed(true);
+      await api.post(`/users/u/${encodeURIComponent(displayName)}/follow`);
+    } catch (e) {
+      console.error(e);
+      setLocalFollowed(false); // revert on failure
+    }
+  };
+
   return (
     <View style={[styles.shortContainer, { height: WINDOW_HEIGHT }]}>
       <Pressable style={StyleSheet.absoluteFill} onPress={togglePlayPause}>
         <VideoView
           player={player}
           style={StyleSheet.absoluteFill}
-          allowsFullscreen={false}
           allowsPictureInPicture={false}
           nativeControls={false}
           contentFit="cover"
+          surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
         />
         
         {showPlayIcon && (
@@ -128,7 +151,7 @@ const ShortItem = ({
           style={[styles.bottomInfo, { paddingBottom: insets.bottom + 90 }]}
         >
           <View style={styles.profileRow}>
-            <TouchableOpacity activeOpacity={0.8} style={styles.profileInfo} onPress={() => onOpenProfile(post.author?._id || '')}>
+            <TouchableOpacity activeOpacity={0.8} style={styles.profileInfo} onPress={() => onOpenProfile(post.author?.userId || '')}>
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
               ) : (
@@ -139,9 +162,21 @@ const ShortItem = ({
               <Text style={styles.authorName}>@{displayName}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.followButton} activeOpacity={0.8}>
-              <Text style={styles.followButtonText}>Follow</Text>
-            </TouchableOpacity>
+            {!isOwnPost && (
+              !localFollowed ? (
+                <TouchableOpacity 
+                  style={styles.followButton} 
+                  activeOpacity={0.8}
+                  onPress={handleInlineFollow}
+                >
+                  <Text style={styles.followButtonText}>Follow</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.followButton, { borderColor: 'transparent', backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                  <Text style={[styles.followButtonText, { color: '#E0E0E0' }]}>Following</Text>
+                </View>
+              )
+            )}
           </View>
           <Text style={styles.contentDesc} numberOfLines={2}>
             {post.content}
@@ -283,6 +318,7 @@ export default function StockScreen() {
               post={item}
               isActive={isFocused && activeVideoId === item._id}
               insets={insets}
+              currentUserHandle={user?.userId}
               onOpenComments={handleOpenComments}
               onOpenProfile={handleOpenProfile}
               onReport={handleReportPost}
