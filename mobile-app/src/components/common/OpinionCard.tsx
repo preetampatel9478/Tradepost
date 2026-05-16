@@ -77,7 +77,7 @@ export function HighlightedText({ text }: { text: string }) {
 }
 
 export function MediaItem({ url, style, isActive = true }: { url: string, style: any, isActive?: boolean }) {
-  const isVideo = url.toLowerCase().match(/\.(mp4|mov|m4v)(\?.*)?$/);
+  const isVideo = url.toLowerCase().match(/\.(mp4|mov|m4v|m3u8)(\?.*)?$/);
   
   const [isPaused, setIsPaused] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);

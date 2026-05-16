@@ -8,6 +8,8 @@ import { auth, optionalAuth, type AuthenticatedRequest } from '../middlewares/au
 import { createError } from '../middlewares/errorHandler';
 import { uploadPostMedia, buildPublicFileUrl } from '../config/upload';
 import { getIO } from '../config/socket';
+import { processVideoToHLS } from '../utils/videoProcessor';
+import path from 'path';
 
 function emitPostEngagementUpdated(postId: string, likeCount: number, commentCount: number) {
   try {
@@ -73,7 +75,24 @@ router.post('/media', auth, uploadPostMedia.array('media', 5), async (req: Authe
     const files = ((req as any).files as Express.Multer.File[] | undefined) || [];
     if (!files.length) return next(createError(400, 'No files uploaded'));
 
-    const urls = files.map((f) => buildPublicFileUrl(req, `/uploads/posts/${f.filename}`));
+    const urls = [];
+    const postsDir = path.join(process.cwd(), 'uploads', 'posts');
+    for (const f of files) {
+      if (f.mimetype.startsWith('video/')) {
+        const basename = path.basename(f.filename, path.extname(f.filename));
+        const inputPath = path.join(postsDir, f.filename);
+        try {
+          const hlsPath = await processVideoToHLS(inputPath, postsDir, basename);
+          // Return the relative URL of the .m3u8 index
+          urls.push(buildPublicFileUrl(req, `/uploads/posts/${hlsPath}`));
+        } catch (err) {
+          return next(createError(500, 'Video processing failed'));
+        }
+      } else {
+        urls.push(buildPublicFileUrl(req, `/uploads/posts/${f.filename}`));
+      }
+    }
+    
     res.status(201).json({ mediaUrls: urls });
   } catch (err) {
     return next(createError(500, 'Media upload failed'));
@@ -96,8 +115,8 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
     }
     
     if (req.query.hasVideo === 'true') {
-      // Find where mediaUrls array has at least one item matching video extensions
-      filter.mediaUrls = { $regex: /\.(mp4|mov|m4v)(\?.*)?$/i };
+      // Find where mediaUrls array has at least one item matching video extensions (or .m3u8 for HLS)
+      filter.mediaUrls = { $regex: /\.(m3u8|mp4|mov|m4v)(\?.*)?$/i };
     }
 
     const query = Post.find(filter)
