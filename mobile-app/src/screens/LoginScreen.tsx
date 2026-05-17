@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
@@ -22,6 +23,7 @@ export default function LoginScreen({ navigation }: any) {
   // Single input for either identifier
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLogin = async () => {
@@ -91,14 +93,25 @@ export default function LoginScreen({ navigation }: any) {
             />
 
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#6F6F86"
-              secureTextEntry
-              style={styles.input}
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor="#6F6F86"
+                secureTextEntry={!showPassword}
+                style={[styles.input, styles.passwordInput]}
+              />
+              <TouchableOpacity
+                style={styles.passwordToggle}
+                onPress={() => setShowPassword((value) => !value)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff color="#A0A0A0" size={20} /> : <Eye color="#A0A0A0" size={20} />}
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={styles.forgotBtn}
@@ -144,6 +157,9 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#1A1A2E', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   label: { color: '#CFCFE2', fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 16 },
   input: { backgroundColor: '#121226', color: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 16, paddingVertical: 14, fontSize: 16 },
+  passwordContainer: { position: 'relative' },
+  passwordInput: { paddingRight: 52 },
+  passwordToggle: { position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' },
   forgotBtn: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 8 },
   forgotText: { color: '#00D084', fontSize: 13, fontWeight: '600' },
   primaryButton: { backgroundColor: '#00D084', borderRadius: 16, paddingVertical: 15, alignItems: 'center', marginTop: 10 },
