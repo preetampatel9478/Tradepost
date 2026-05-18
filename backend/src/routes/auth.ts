@@ -4,10 +4,29 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import { uploadAvatar, buildPublicFileUrl } from '../config/upload';
 import { createError } from '../middlewares/errorHandler';
+import { OAuth2Client } from 'google-auth-library';
+import { authMiddleware, AuthenticatedRequest } from '../middlewares/auth';
+import logger from '../utils/logger';
+import { validateUsername, sanitizeUsername, USERNAME_RULES } from '../utils/usernameValidator';
+import { 
+  loginLimiter, 
+  registerLimiter, 
+  googleAuthLimiter, 
+  usernameLimiter, 
+  onboardingLimiter 
+} from '../utils/rateLimiters';
 
 const router = express.Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || 'dummy-client-id');
 
-router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, next) => {
+/**
+ * POST /api/auth/google
+ * Google OAuth Sign-In endpoint
+ * Verifies Google ID token server-side and creates/returns user
+ * On first login (new user), sets isOnboarded: false
+ * On returning user, sets isOnboarded based on profile completion
+ */
+router.post('/google', googleAuthLimiter, async (req, res, next) => {
   try {
     const { mobileNumber, userId, password, tc_accepted, tc_device, name, email } = req.body;
     if (!mobileNumber?.trim()) return next(createError(400, 'Mobile Number is required'));
@@ -80,6 +99,216 @@ router.post('/login', async (req, res, next) => {
     });
   } catch (err: any) {
     return next(createError(500, 'Login failed'));
+  }
+});
+
+router.post('/google', async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return next(createError(400, 'idToken is required'));
+
+    // Verify Google token on the server-side (never trust client tokens)
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID || 'dummy-client-id',
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      logger.error('Google Token Verification Error:', err);
+      return next(createError(401, 'Invalid or expired Google token'));
+    }
+
+    if (!payload?.email || !payload?.sub) {
+      return next(createError(400, 'Invalid Google token payload'));
+    }
+
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = payload.email.toLowerCase();
+
+    // Try to find existing user by googleId or email
+    let user = await User.findOne({
+      $or: [{ googleId: payload.sub }, { email: normalizedEmail }],
+    });
+
+    if (!user) {
+      // New user: Create with temporary userId (will be set during onboarding)
+      const tempUserId = `google_${payload.sub.substring(0, 12)}_${Date.now()}`;
+      
+      user = new User({
+        googleId: payload.sub,
+        email: normalizedEmail,
+        name: payload.name || '',
+        profilePhoto: payload.picture || '',
+        userId: tempUserId,
+        passwordHash: await bcrypt.hash(Math.random().toString(36), 10), // Dummy hash
+        isOnboarded: false,
+        tc_accepted: false,
+      });
+
+      await user.save();
+      logger.info(`New Google user created: ${user._id} (${normalizedEmail})`);
+    } else if (user.googleId !== payload.sub) {
+      // Existing user without Google linked: Link Google account
+      user.googleId = payload.sub;
+      await user.save();
+      logger.info(`Google account linked to existing user: ${user._id}`);
+    }
+
+    // Issue JWT token (valid for 7 days, but limited scope if not onboarded)
+    const token = jwt.sign(
+      { id: user._id, email: user.email, isOnboarded: user.isOnboarded },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      user: {
+        id: user._id,
+        userId: user.userId,
+        name: user.name || '',
+        email: user.email,
+        avatar: user.profilePhoto,
+        isOnboarded: user.isOnboarded,
+      },
+      token,
+      is_onboarded: user.isOnboarded,
+    });
+  } catch (err: any) {
+    logger.error('Google Auth Error:', err);
+    return next(createError(500, 'Google authentication failed'));
+  }
+});
+
+/**
+ * GET /api/auth/check-username
+ * Check if a username is available for registration
+ * Returns { available: boolean, error?: string }
+ */
+router.get('/check-username', async (req, res, next) => {
+  try {
+    const { username } = req.query;
+    if (!username || typeof username !== 'string') {
+      return next(createError(400, 'Username parameter is required'));
+    }
+
+    // Validate username format
+    const validation = validateUsername(username);
+    if (!validation.valid) {
+      return res.json({ available: false, error: validation.error });
+    }
+
+    const sanitized = sanitizeUsername(username);
+    
+    // Check if username exists (case-insensitive)
+    const existing = await User.findOne({ userId: sanitized });
+    
+    res.json({
+      available: !existing,
+      username: sanitized,
+    });
+  } catch (err: any) {
+    logger.error('Check Username Error:', err);
+    return next(createError(500, 'Failed to check username availability'));
+  }
+});
+
+/**
+ * PUT /api/auth/complete-onboarding
+ * Complete user onboarding by setting username and accepting T&C
+ * Protected endpoint - requires valid JWT token
+ * Only users with isOnboarded: false can complete this
+ */
+router.put('/complete-onboarding', authMiddleware, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { username, tc_accepted, tc_device } = req.body;
+    const userId = req.userId;
+
+    // Validate input
+    if (!username || typeof username !== 'string') {
+      return next(createError(400, 'Valid username is required'));
+    }
+
+    if (!tc_accepted) {
+      return next(createError(400, 'Terms and Conditions must be accepted'));
+    }
+
+    if (!userId) {
+      logger.warn('Complete onboarding called without userId in token');
+      return next(createError(401, 'Unauthorized'));
+    }
+
+    // Validate username format
+    const validation = validateUsername(username);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+
+    const sanitized = sanitizeUsername(username);
+
+    // Fetch user from database
+    const user = await User.findById(userId);
+    if (!user) {
+      logger.warn(`User not found during onboarding: ${userId}`);
+      return next(createError(404, 'User not found'));
+    }
+
+    // Check if already onboarded (prevent race conditions)
+    if (user.isOnboarded) {
+      logger.warn(`User already onboarded, attempted re-onboarding: ${userId}`);
+      return next(createError(400, 'User has already completed onboarding'));
+    }
+
+    // Check if username already exists (excluding current user's temp username)
+    const existingUser = await User.findOne({ userId: sanitized });
+    if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+      logger.warn(`Username taken during onboarding: ${sanitized}`);
+      return res.status(409).json({ success: false, error: 'Username is already taken' });
+    }
+
+    // Update user with chosen username and T&C acceptance
+    user.userId = sanitized;
+    user.isOnboarded = true;
+    user.tc_accepted = true;
+    user.tc_timestamp = new Date();
+    user.tc_device = tc_device || 'unknown';
+
+    await user.save();
+    logger.info(`User onboarded successfully: ${user._id} with username: ${sanitized}`);
+
+    // Issue production-grade tokens
+    const token = jwt.sign(
+      { id: user._id, email: user.email, isOnboarded: true },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET || 'refresh-secret',
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        userId: user.userId,
+        name: user.name || '',
+        email: user.email,
+        avatar: user.profilePhoto,
+        isOnboarded: user.isOnboarded,
+      },
+      token,
+      refreshToken,
+    });
+  } catch (err: any) {
+    logger.error('Complete Onboarding Error:', err);
+    if (err?.code === 11000) {
+      return next(createError(409, 'Username is already taken'));
+    }
+    return next(createError(500, 'Failed to complete onboarding'));
   }
 });
 

@@ -4,10 +4,20 @@ const userSchema = new Schema(
   {
     mobileNumber: {
       type: String,
-      required: true,
       trim: true,
       unique: true,
+      sparse: true,
       index: true,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    isOnboarded: {
+      type: Boolean,
+      default: false,
     },
     name: {
       type: String,

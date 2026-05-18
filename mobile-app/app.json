@@ -43,7 +43,9 @@
           "color": "#00D084"
         }
       ],
-      "expo-video"
+      "expo-video",
+      "@react-native-google-signin/google-signin",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

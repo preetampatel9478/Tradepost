@@ -14,13 +14,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, CheckCircle2, Circle, Eye, EyeOff, Shield, X } from 'lucide-react-native';
+import { Camera, CheckCircle2, Circle, Eye, EyeOff, Shield, X, Chrome } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiErrorMessage } from '../utils/apiError';
+import { isGoogleSignInAvailable } from '../utils/googleSignIn';
 
 export default function RegisterScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -285,6 +286,23 @@ export default function RegisterScreen({ navigation }: any) {
               </Text>
             </TouchableOpacity>
 
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 16 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+              <Text style={{ color: '#A0A0A0', marginHorizontal: 12, fontSize: 12, fontWeight: '600' }}>OR</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            </View>
+
+            {isGoogleSignInAvailable() && (
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={() => navigation.navigate('Login')} // Redirect to login to use Google flow
+                activeOpacity={0.85}
+              >
+                <Chrome color="#0F0F1E" size={20} style={{ marginRight: 8 }} />
+                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={styles.secondaryButton}
               onPress={() => navigation.navigate('Login')}
@@ -396,6 +414,24 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#07130D', fontSize: 16, fontWeight: '800' },
   secondaryButton: { alignItems: 'center', marginTop: 20, paddingVertical: 8 },
   secondaryButtonText: { color: '#A0A0A0', fontSize: 14, fontWeight: '600' },
+  divider: { flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
+  dividerText: { color: '#A0A0A0', marginHorizontal: 12, fontSize: 12, fontWeight: '600' },
+  googleButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  googleButtonText: { color: '#0F0F1E', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
   
   // Glassmorphism T&C Modal Styles
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.7)' },

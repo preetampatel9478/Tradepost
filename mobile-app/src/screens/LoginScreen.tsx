@@ -10,12 +10,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff, Chrome } from 'lucide-react-native';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiErrorMessage } from '../utils/apiError';
+import { getGoogleSignIn, isGoogleSignInAvailable } from '../utils/googleSignIn';
+import { saveAuthToken, saveTempToken } from '../utils/secureTokenStorage';
 
 export default function LoginScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -25,6 +27,53 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    if (!isGoogleSignInAvailable()) {
+      Alert.alert('Google Sign-In Not Available', 'Google Sign-In is not available on this device. Please use traditional login.');
+      return;
+    }
+
+    setIsGoogleSubmitting(true);
+    try {
+      const GoogleSigninModule = getGoogleSignIn();
+      await GoogleSigninModule.hasPlayServices();
+      const userInfo = await GoogleSigninModule.signIn();
+      const idToken = userInfo.data?.idToken;
+      if (!idToken) throw new Error('No Google ID Token generated');
+
+      const response = await api.post('/auth/google', { idToken });
+      const { user, token, is_onboarded } = response.data;
+      
+      if (!is_onboarded) {
+        // Store temporary token for onboarding completion
+        await saveTempToken(token);
+        navigation.navigate('Onboarding', { user });
+        return;
+      }
+      
+      dispatch(
+        setUser({
+          id: user.id,
+          name: user.name || user.userId,
+          userId: user.userId,
+          mobileNumber: user.mobileNumber,
+          avatar: user.avatar,
+          email: user.email,
+          bio: user.bio,
+          createdAt: user.createdAt,
+          isVerified: false,
+        })
+      );
+      dispatch(setToken(token));
+      await saveAuthToken(token);
+    } catch (e: any) {
+      Alert.alert('Google Sign-in failed', e.message || getApiErrorMessage(e));
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
@@ -55,7 +104,7 @@ export default function LoginScreen({ navigation }: any) {
         })
       );
       dispatch(setToken(token));
-      await AsyncStorage.setItem('authToken', token);
+      await saveAuthToken(token);
     } catch (e: any) {
       Alert.alert('Sign in failed', getApiErrorMessage(e));
     } finally {
@@ -139,6 +188,26 @@ export default function LoginScreen({ navigation }: any) {
             >
               <Text style={styles.secondaryButtonText}>New to TradePost? Create an account</Text>
             </TouchableOpacity>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {isGoogleSignInAvailable() && (
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.85}
+                disabled={isGoogleSubmitting}
+              >
+                <Chrome color="#0F0F1E" size={20} style={{ marginRight: 8 }} />
+                <Text style={styles.googleButtonText}>
+                  {isGoogleSubmitting ? 'Signing in...' : 'Continue with Google'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -167,4 +236,22 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#07130D', fontSize: 16, fontWeight: '800' },
   secondaryButton: { alignItems: 'center', marginTop: 20, paddingVertical: 8 },
   secondaryButtonText: { color: '#A0A0A0', fontSize: 14, fontWeight: '600' },
+  divider: { flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
+  dividerText: { color: '#A0A0A0', marginHorizontal: 12, fontSize: 12, fontWeight: '600' },
+  googleButton: { 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 16, 
+    paddingVertical: 15, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+    marginTop: 2
+  },
+  googleButtonText: { color: '#0F0F1E', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
 });
