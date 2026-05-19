@@ -14,14 +14,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, CheckCircle2, Circle, Eye, EyeOff, Shield, X, Chrome } from 'lucide-react-native';
+import { Camera, CheckCircle2, Circle, Eye, EyeOff, Shield, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppDispatch } from '../hooks/reduxHooks';
 import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiErrorMessage } from '../utils/apiError';
-import { isGoogleSignInAvailable } from '../utils/googleSignIn';
+import { isGoogleSignInAvailable, getGoogleSignIn } from '../utils/googleSignIn';
+import { isAppleSignInAvailable, performAppleSignIn } from '../utils/appleSignIn';
+import { saveAuthToken, saveTempToken } from '../utils/secureTokenStorage';
 
 export default function RegisterScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -43,6 +45,100 @@ export default function RegisterScreen({ navigation }: any) {
   
   // Auditing variables stored securely upon agreement
   const [auditData, setAuditData] = useState<{ timestamp: string; app_version: string; device_id: string } | null>(null);
+
+  // Social signup states
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+  const [isAppleSubmitting, setIsAppleSubmitting] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  // Check Apple availability on mount
+  React.useEffect(() => {
+    (async () => {
+      const available = await isAppleSignInAvailable();
+      setAppleAvailable(available);
+    })();
+  }, []);
+
+  const handleGoogleSignUp = async () => {
+    setIsGoogleSubmitting(true);
+    try {
+      const GoogleSignIn = getGoogleSignIn();
+      if (!GoogleSignIn) throw new Error('Google Sign-In not available');
+      
+      await GoogleSignIn.signIn();
+      const { idToken } = await GoogleSignIn.getTokens();
+      
+      const response = await api.post('/auth/google', { idToken });
+      const { user, token, is_onboarded } = response.data;
+
+      if (!is_onboarded) {
+        await saveTempToken(token);
+        navigation.navigate('Onboarding', { user });
+        return;
+      }
+
+      dispatch(setUser({
+        id: user.id,
+        name: user.name || user.userId,
+        userId: user.userId,
+        mobileNumber: user.mobileNumber,
+        avatar: user.avatar,
+        email: user.email,
+        bio: user.bio,
+        createdAt: user.createdAt,
+        isVerified: false,
+      }));
+      dispatch(setToken(token));
+      await saveAuthToken(token);
+    } catch (e: any) {
+      Alert.alert('Google Sign-up failed', e.message || getApiErrorMessage(e));
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
+  };
+
+  const handleAppleSignUp = async () => {
+    setIsAppleSubmitting(true);
+    try {
+      const credential = await performAppleSignIn();
+      
+      const response = await api.post('/auth/apple', {
+        identityToken: credential.identityToken,
+        user: {
+          email: credential.email,
+          fullName: credential.fullName,
+        },
+      });
+
+      const { user, token, is_onboarded } = response.data;
+
+      if (!is_onboarded) {
+        await saveTempToken(token);
+        navigation.navigate('Onboarding', { user });
+        return;
+      }
+
+      dispatch(setUser({
+        id: user.id,
+        name: user.name || user.userId,
+        userId: user.userId,
+        mobileNumber: user.mobileNumber,
+        avatar: user.avatar,
+        email: user.email,
+        bio: user.bio,
+        createdAt: user.createdAt,
+        isVerified: false,
+      }));
+      dispatch(setToken(token));
+      await saveAuthToken(token);
+    } catch (e: any) {
+      if (e.code !== 'ERR_CANCELED') {
+        Alert.alert('Apple Sign-up failed', e.message || getApiErrorMessage(e));
+      }
+    } finally {
+      setIsAppleSubmitting(false);
+    }
+  };
 
   const handleScroll = (event: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -292,14 +388,63 @@ export default function RegisterScreen({ navigation }: any) {
               <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
             </View>
 
+            {/* Social Signup Icon Buttons */}
+            <View style={styles.socialContainer}>
+              {isGoogleSignInAvailable() && (
+                <TouchableOpacity
+                  style={[styles.socialButton, styles.googleBtn]}
+                  onPress={handleGoogleSignUp}
+                  activeOpacity={0.85}
+                  disabled={isGoogleSubmitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign up with Google"
+                >
+                  <Text style={styles.socialButtonText}>
+                    {isGoogleSubmitting ? '...' : '󰊜'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {appleAvailable && (
+                <TouchableOpacity
+                  style={[styles.socialButton, styles.appleBtn]}
+                  onPress={handleAppleSignUp}
+                  activeOpacity={0.85}
+                  disabled={isAppleSubmitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign up with Apple"
+                >
+                  <Text style={styles.socialButtonText}>
+                    {isAppleSubmitting ? '...' : ''}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Full-width alternative text buttons */}
             {isGoogleSignInAvailable() && (
               <TouchableOpacity
-                style={styles.googleButton}
-                onPress={() => navigation.navigate('Login')} // Redirect to login to use Google flow
+                style={[styles.fullWidthSocialBtn, styles.googleTextBtn]}
+                onPress={handleGoogleSignUp}
                 activeOpacity={0.85}
+                disabled={isGoogleSubmitting}
               >
-                <Chrome color="#0F0F1E" size={20} style={{ marginRight: 8 }} />
-                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+                <Text style={styles.socialTextBtnText}>
+                  {isGoogleSubmitting ? 'Signing up with Google...' : 'Sign up with Google'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {appleAvailable && (
+              <TouchableOpacity
+                style={[styles.fullWidthSocialBtn, styles.appleTextBtn]}
+                onPress={handleAppleSignUp}
+                activeOpacity={0.85}
+                disabled={isAppleSubmitting}
+              >
+                <Text style={styles.socialTextBtnText}>
+                  {isAppleSubmitting ? 'Signing up with Apple...' : 'Sign up with Apple'}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -414,24 +559,6 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#07130D', fontSize: 16, fontWeight: '800' },
   secondaryButton: { alignItems: 'center', marginTop: 20, paddingVertical: 8 },
   secondaryButtonText: { color: '#A0A0A0', fontSize: 14, fontWeight: '600' },
-  divider: { flexDirection: 'row', alignItems: 'center', marginTop: 16, marginBottom: 16 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
-  dividerText: { color: '#A0A0A0', marginHorizontal: 12, fontSize: 12, fontWeight: '600' },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  googleButtonText: { color: '#0F0F1E', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
   
   // Glassmorphism T&C Modal Styles
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.7)' },
@@ -445,5 +572,18 @@ const styles = StyleSheet.create({
   agreeButton: { backgroundColor: '#3B82F6', marginHorizontal: 20, marginTop: 20, paddingVertical: 15, borderRadius: 14, alignItems: 'center' },
   agreeButtonDisabled: { backgroundColor: '#1E293B' },
   agreeButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  
+  // Social login buttons
+  socialContainer: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 12, marginBottom: 12 },
+  socialButton: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  googleBtn: { backgroundColor: '#FFFFFF', borderColor: '#E8E8E8' },
+  appleBtn: { backgroundColor: '#000000', borderColor: '#333333' },
+  socialButtonText: { fontSize: 28, fontWeight: '600' },
+
+  // Full-width social buttons
+  fullWidthSocialBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginTop: 8, borderWidth: 1 },
+  googleTextBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.08)' },
+  appleTextBtn: { backgroundColor: 'rgba(0,0,0,0.3)', borderColor: 'rgba(255,255,255,0.08)' },
+  socialTextBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
 

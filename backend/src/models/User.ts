@@ -15,6 +15,12 @@ const userSchema = new Schema(
       sparse: true,
       index: true,
     },
+    appleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
     isOnboarded: {
       type: Boolean,
       default: false,

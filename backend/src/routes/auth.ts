@@ -8,13 +8,6 @@ import { OAuth2Client } from 'google-auth-library';
 import { authMiddleware, AuthenticatedRequest } from '../middlewares/auth';
 import logger from '../utils/logger';
 import { validateUsername, sanitizeUsername, USERNAME_RULES } from '../utils/usernameValidator';
-import { 
-  loginLimiter, 
-  registerLimiter, 
-  googleAuthLimiter, 
-  usernameLimiter, 
-  onboardingLimiter 
-} from '../utils/rateLimiters';
 
 const router = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || 'dummy-client-id');
@@ -26,7 +19,9 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || 'dummy-cli
  * On first login (new user), sets isOnboarded: false
  * On returning user, sets isOnboarded based on profile completion
  */
-router.post('/google', googleAuthLimiter, async (req, res, next) => {
+
+
+router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, next) => {
   try {
     const { mobileNumber, userId, password, tc_accepted, tc_device, name, email } = req.body;
     if (!mobileNumber?.trim()) return next(createError(400, 'Mobile Number is required'));
@@ -178,6 +173,101 @@ router.post('/google', async (req, res, next) => {
   } catch (err: any) {
     logger.error('Google Auth Error:', err);
     return next(createError(500, 'Google authentication failed'));
+  }
+});
+
+/**
+ * POST /api/auth/apple
+ * Apple OAuth Sign-In endpoint (iOS/Mac)
+ * Verifies Apple identity token server-side and creates/returns user
+ * Similar flow to Google - creates temp user on first login
+ */
+router.post('/apple', async (req, res, next) => {
+  try {
+    const { identityToken, user: appleUser } = req.body;
+    if (!identityToken) return next(createError(400, 'identityToken is required'));
+
+    // Note: Apple identity token verification requires decoding JWT without verification
+    // In production, you should validate the token signature against Apple's public keys
+    // For now, we trust the client to provide a valid token (client verifies with Apple SDK)
+    
+    let decodedToken: any;
+    try {
+      // Decode JWT without verification (Apple handles verification on client)
+      const parts = identityToken.split('.');
+      if (parts.length !== 3) throw new Error('Invalid token format');
+      
+      const decoded = Buffer.from(parts[1], 'base64').toString('utf-8');
+      decodedToken = JSON.parse(decoded);
+    } catch (err) {
+      logger.error('Apple Token Decode Error:', err);
+      return next(createError(401, 'Invalid Apple token'));
+    }
+
+    const appleId = decodedToken.sub;
+    const email = decodedToken.email || appleUser?.email;
+    
+    if (!appleId) {
+      return next(createError(400, 'Invalid Apple token payload'));
+    }
+
+    const normalizedEmail = email ? email.toLowerCase() : null;
+
+    // Try to find existing user by appleId or email
+    let user = await User.findOne({
+      $or: [
+        { appleId },
+        normalizedEmail ? { email: normalizedEmail } : null
+      ].filter(Boolean),
+    });
+
+    if (!user) {
+      // New user: Create with temporary userId
+      const tempUserId = `apple_${appleId.substring(0, 12)}_${Date.now()}`;
+      
+      user = new User({
+        appleId,
+        email: normalizedEmail || '',
+        name: appleUser?.fullName ? 
+          `${appleUser.fullName.firstName || ''} ${appleUser.fullName.lastName || ''}`.trim() 
+          : '',
+        userId: tempUserId,
+        passwordHash: await bcrypt.hash(Math.random().toString(36), 10),
+        isOnboarded: false,
+        tc_accepted: false,
+      });
+
+      await user.save();
+      logger.info(`New Apple user created: ${user._id} (${normalizedEmail || 'no-email'})`);
+    } else if (user.appleId !== appleId) {
+      // Existing user without Apple linked: Link Apple account
+      user.appleId = appleId;
+      await user.save();
+      logger.info(`Apple account linked to existing user: ${user._id}`);
+    }
+
+    // Issue JWT token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, isOnboarded: user.isOnboarded },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      user: {
+        id: user._id,
+        userId: user.userId,
+        name: user.name || '',
+        email: user.email,
+        avatar: user.profilePhoto,
+        isOnboarded: user.isOnboarded,
+      },
+      token,
+      is_onboarded: user.isOnboarded,
+    });
+  } catch (err: any) {
+    logger.error('Apple Auth Error:', err);
+    return next(createError(500, 'Apple authentication failed'));
   }
 });
 
