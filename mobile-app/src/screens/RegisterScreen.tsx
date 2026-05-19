@@ -24,6 +24,9 @@ import { getApiErrorMessage } from '../utils/apiError';
 import { isGoogleSignInAvailable, getGoogleSignIn } from '../utils/googleSignIn';
 import { isAppleSignInAvailable, performAppleSignIn } from '../utils/appleSignIn';
 import { saveAuthToken, saveTempToken } from '../utils/secureTokenStorage';
+import { SocialAuthButton } from '../components/common/SocialAuthButton';
+import { auth } from '../config/firebase';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 
 export default function RegisterScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -65,9 +68,16 @@ export default function RegisterScreen({ navigation }: any) {
       const GoogleSignIn = getGoogleSignIn();
       if (!GoogleSignIn) throw new Error('Google Sign-In not available');
       
-      await GoogleSignIn.signIn();
-      const { idToken } = await GoogleSignIn.getTokens();
+      const userInfo = await GoogleSignIn.signIn();
+      const idToken = userInfo.data?.idToken;
       
+      if (!idToken) throw new Error('No Google ID Token generated');
+      
+      // Authenticate with Firebase
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+
+      // Authenticate with our backend
       const response = await api.post('/auth/google', { idToken });
       const { user, token, is_onboarded } = response.data;
 
@@ -388,65 +398,21 @@ export default function RegisterScreen({ navigation }: any) {
               <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
             </View>
 
-            {/* Social Signup Icon Buttons */}
-            <View style={styles.socialContainer}>
-              {isGoogleSignInAvailable() && (
-                <TouchableOpacity
-                  style={[styles.socialButton, styles.googleBtn]}
-                  onPress={handleGoogleSignUp}
-                  activeOpacity={0.85}
-                  disabled={isGoogleSubmitting}
-                  accessibilityRole="button"
-                  accessibilityLabel="Sign up with Google"
-                >
-                  <Text style={styles.socialButtonText}>
-                    {isGoogleSubmitting ? '...' : '󰊜'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+            <SocialAuthButton
+              provider="google"
+              title="Continue with Google"
+              onPress={handleGoogleSignUp}
+              isLoading={isGoogleSubmitting}
+              disabled={!isGoogleSignInAvailable()}
+            />
 
-              {appleAvailable && (
-                <TouchableOpacity
-                  style={[styles.socialButton, styles.appleBtn]}
-                  onPress={handleAppleSignUp}
-                  activeOpacity={0.85}
-                  disabled={isAppleSubmitting}
-                  accessibilityRole="button"
-                  accessibilityLabel="Sign up with Apple"
-                >
-                  <Text style={styles.socialButtonText}>
-                    {isAppleSubmitting ? '...' : ''}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Full-width alternative text buttons */}
-            {isGoogleSignInAvailable() && (
-              <TouchableOpacity
-                style={[styles.fullWidthSocialBtn, styles.googleTextBtn]}
-                onPress={handleGoogleSignUp}
-                activeOpacity={0.85}
-                disabled={isGoogleSubmitting}
-              >
-                <Text style={styles.socialTextBtnText}>
-                  {isGoogleSubmitting ? 'Signing up with Google...' : 'Sign up with Google'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {appleAvailable && (
-              <TouchableOpacity
-                style={[styles.fullWidthSocialBtn, styles.appleTextBtn]}
-                onPress={handleAppleSignUp}
-                activeOpacity={0.85}
-                disabled={isAppleSubmitting}
-              >
-                <Text style={styles.socialTextBtnText}>
-                  {isAppleSubmitting ? 'Signing up with Apple...' : 'Sign up with Apple'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <SocialAuthButton
+              provider="apple"
+              title="Continue with Apple"
+              onPress={handleAppleSignUp}
+              isLoading={isAppleSubmitting}
+              disabled={!appleAvailable}
+            />
 
             <TouchableOpacity
               style={styles.secondaryButton}
@@ -572,18 +538,5 @@ const styles = StyleSheet.create({
   agreeButton: { backgroundColor: '#3B82F6', marginHorizontal: 20, marginTop: 20, paddingVertical: 15, borderRadius: 14, alignItems: 'center' },
   agreeButtonDisabled: { backgroundColor: '#1E293B' },
   agreeButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  
-  // Social login buttons
-  socialContainer: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 12, marginBottom: 12 },
-  socialButton: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  googleBtn: { backgroundColor: '#FFFFFF', borderColor: '#E8E8E8' },
-  appleBtn: { backgroundColor: '#000000', borderColor: '#333333' },
-  socialButtonText: { fontSize: 28, fontWeight: '600' },
-
-  // Full-width social buttons
-  fullWidthSocialBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginTop: 8, borderWidth: 1 },
-  googleTextBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.08)' },
-  appleTextBtn: { backgroundColor: 'rgba(0,0,0,0.3)', borderColor: 'rgba(255,255,255,0.08)' },
-  socialTextBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
 

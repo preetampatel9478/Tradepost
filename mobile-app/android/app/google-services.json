@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "338245795398",
+    "project_id": "traderpost-c2b9c",
+    "storage_bucket": "traderpost-c2b9c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338245795398:android:7145aecaa47d90a6f89447",
+        "android_client_info": {
+          "package_name": "com.traderpost.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "338245795398-0nqs1gcdae04462bvlk2u2l1br6kguct.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAV5cEOurLMX_5AuBq9Cz_dg0yErsv9Mv0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "338245795398-xxxxx.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -214,11 +214,13 @@ router.post('/apple', async (req, res, next) => {
     const normalizedEmail = email ? email.toLowerCase() : null;
 
     // Try to find existing user by appleId or email
+    const appleLookupConditions: any[] = [{ appleId }];
+    if (normalizedEmail) {
+      appleLookupConditions.push({ email: normalizedEmail });
+    }
+
     let user = await User.findOne({
-      $or: [
-        { appleId },
-        normalizedEmail ? { email: normalizedEmail } : null
-      ].filter(Boolean),
+      $or: appleLookupConditions,
     });
 
     if (!user) {

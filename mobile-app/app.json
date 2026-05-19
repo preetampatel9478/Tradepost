@@ -6,28 +6,35 @@
     "orientation": "portrait",
     "icon": "./src/assets/images/icon.png",
     "userInterfaceStyle": "dark",
+
     "splash": {
       "image": "./src/assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F0F1E"
     },
+
     "assetBundlePatterns": [
       "**/*"
     ],
+
     "ios": {
       "supportsTabletMode": true,
       "bundleIdentifier": "com.tradepost.mobile"
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#0F0F1E"
       },
-      "package": "com.tradepost.mobile"
+      "package": "com.traderpost.app",
+      "googleServicesFile": "./android/app/google-services.json"
     },
+
     "web": {
       "favicon": "./src/assets/images/favicon.png"
     },
+
     "plugins": [
       [
         "expo-image-picker",
@@ -36,6 +43,7 @@
           "cameraPermission": "The app uses camera for document scanning."
         }
       ],
+
       [
         "expo-notifications",
         {
@@ -43,14 +51,34 @@
           "color": "#00D084"
         }
       ],
+
       "expo-video",
-      "@react-native-google-signin/google-signin",
+
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.your_ios_client_id"
+        }
+      ],
+
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+
       "expo-secure-store"
     ],
+
     "extra": {
       "eas": {
         "projectId": "your_project_id_here"
-      }
+      },
+
+      "googleWebClientId": "338245795398-xxxxx.apps.googleusercontent.com"
     }
   }
 }
