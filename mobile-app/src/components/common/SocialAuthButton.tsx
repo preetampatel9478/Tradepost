@@ -24,10 +24,10 @@ export const SocialAuthButton: React.FC<SocialAuthButtonProps> = ({
       style={[
         styles.button, 
         isGoogle ? styles.googleButton : styles.appleButton, 
-        (disabled || isLoading) && styles.disabled
+        isLoading && styles.disabled
       ]}
       onPress={onPress}
-      disabled={disabled || isLoading}
+      disabled={isLoading}
       activeOpacity={0.8}
     >
       {isLoading ? (

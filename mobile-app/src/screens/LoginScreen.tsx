@@ -16,12 +16,10 @@ import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiErrorMessage } from '../utils/apiError';
-import { getGoogleSignIn, isGoogleSignInAvailable } from '../utils/googleSignIn';
+import { performGoogleSignIn, isGoogleSignInAvailable } from '../utils/googleSignIn';
 import { saveAuthToken, saveTempToken } from '../utils/secureTokenStorage';
 import { isAppleSignInAvailable, performAppleSignIn } from '../utils/appleSignIn';
 import { SocialAuthButton } from '../components/common/SocialAuthButton';
-import { auth } from '../config/firebase';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 
 export default function LoginScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -89,35 +87,25 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isGoogleSignInAvailable()) {
-      Alert.alert('Google Sign-In Not Available', 'Google Sign-In is not available on this device. Please use traditional login.');
-      return;
-    }
-
     setIsGoogleSubmitting(true);
     try {
-      const GoogleSigninModule = getGoogleSignIn();
-      await GoogleSigninModule.hasPlayServices();
-      const userInfo = await GoogleSigninModule.signIn();
-      const idToken = userInfo.data?.idToken || userInfo.idToken;
-      
-      if (!idToken) throw new Error('No Google ID Token generated');
+      if (!isGoogleSignInAvailable()) {
+        throw new Error('Google Sign-In is not configured. Please check your Client ID.');
+      }
 
-      // Authenticate with Firebase
-      const credential = GoogleAuthProvider.credential(idToken);
-      await signInWithCredential(auth, credential);
+      // Perform OAuth flow to get ID token
+      const { idToken } = await performGoogleSignIn();
 
-      // Authenticate with our backend
+      // Authenticate with our backend (backend validates the token)
       const response = await api.post('/auth/google', { idToken });
       const { user, token, is_onboarded } = response.data;
-      
+
       if (!is_onboarded) {
-        // Store temporary token for onboarding completion
         await saveTempToken(token);
         navigation.navigate('Onboarding', { user });
         return;
       }
-      
+
       dispatch(
         setUser({
           id: user.id,
@@ -134,7 +122,17 @@ export default function LoginScreen({ navigation }: any) {
       dispatch(setToken(token));
       await saveAuthToken(token);
     } catch (e: any) {
-      Alert.alert('Google Sign-in failed', e.message || getApiErrorMessage(e));
+      console.error('Google Sign-in error:', e);
+      const message = e.message || getApiErrorMessage(e);
+
+      if (message.includes('canceled')) {
+        // User canceled the OAuth flow - don't show alert
+        return;
+      } else if (message.includes('not configured')) {
+        Alert.alert('Setup Required', message);
+      } else {
+        Alert.alert('Google Sign-in failed', message);
+      }
     } finally {
       setIsGoogleSubmitting(false);
     }
@@ -265,7 +263,6 @@ export default function LoginScreen({ navigation }: any) {
               title="Continue with Google"
               onPress={handleGoogleSignIn}
               isLoading={isGoogleSubmitting}
-              disabled={!isGoogleSignInAvailable()}
             />
 
             <SocialAuthButton
@@ -273,7 +270,6 @@ export default function LoginScreen({ navigation }: any) {
               title="Continue with Apple"
               onPress={handleAppleSignIn}
               isLoading={isAppleSubmitting}
-              disabled={!appleAvailable}
             />
           </View>
         </View>

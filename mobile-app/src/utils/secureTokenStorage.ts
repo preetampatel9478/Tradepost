@@ -3,18 +3,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * Secure Token Storage Utility
- * Uses expo-secure-store for encrypted storage on both iOS and Android
- * Falls back to AsyncStorage for development/testing
+ * Uses AsyncStorage for now to fix the ExpoCryptoAES native module error.
+ * Once you create a custom dev client (EAS Build), you can switch back to SecureStore.
  */
 
-const isDevelopment = process.env.NODE_ENV === 'development';
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const TEMP_TOKEN_KEY = 'temp_token';
 
+// Use AsyncStorage temporarily to prevent ExpoCryptoAES crashes in Expo Go
+// Change `true` to `false` when running a proper production build or custom dev client
+const useAsyncStorageFallback = true; 
+
 export async function saveAuthToken(token: string): Promise<void> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       await AsyncStorage.setItem(TOKEN_KEY, token);
     } else {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
@@ -27,7 +30,7 @@ export async function saveAuthToken(token: string): Promise<void> {
 
 export async function getAuthToken(): Promise<string | null> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       return await AsyncStorage.getItem(TOKEN_KEY);
     } else {
       return await SecureStore.getItemAsync(TOKEN_KEY);
@@ -40,7 +43,7 @@ export async function getAuthToken(): Promise<string | null> {
 
 export async function removeAuthToken(): Promise<void> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       await AsyncStorage.removeItem(TOKEN_KEY);
     } else {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -52,7 +55,7 @@ export async function removeAuthToken(): Promise<void> {
 
 export async function saveRefreshToken(token: string): Promise<void> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       await AsyncStorage.setItem(REFRESH_TOKEN_KEY, token);
     } else {
       await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, token);
@@ -65,7 +68,7 @@ export async function saveRefreshToken(token: string): Promise<void> {
 
 export async function getRefreshToken(): Promise<string | null> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
     } else {
       return await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
@@ -78,7 +81,7 @@ export async function getRefreshToken(): Promise<string | null> {
 
 export async function removeRefreshToken(): Promise<void> {
   try {
-    if (isDevelopment) {
+    if (useAsyncStorageFallback) {
       await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
     } else {
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);

@@ -21,12 +21,10 @@ import { setToken, setUser } from '../store/slices/authSlice';
 import api from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiErrorMessage } from '../utils/apiError';
-import { isGoogleSignInAvailable, getGoogleSignIn } from '../utils/googleSignIn';
+import { performGoogleSignIn, isGoogleSignInAvailable } from '../utils/googleSignIn';
 import { isAppleSignInAvailable, performAppleSignIn } from '../utils/appleSignIn';
 import { saveAuthToken, saveTempToken } from '../utils/secureTokenStorage';
 import { SocialAuthButton } from '../components/common/SocialAuthButton';
-import { auth } from '../config/firebase';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 
 export default function RegisterScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
@@ -65,19 +63,14 @@ export default function RegisterScreen({ navigation }: any) {
   const handleGoogleSignUp = async () => {
     setIsGoogleSubmitting(true);
     try {
-      const GoogleSignIn = getGoogleSignIn();
-      if (!GoogleSignIn) throw new Error('Google Sign-In not available');
-      
-      const userInfo = await GoogleSignIn.signIn();
-      const idToken = userInfo.data?.idToken;
-      
-      if (!idToken) throw new Error('No Google ID Token generated');
-      
-      // Authenticate with Firebase
-      const credential = GoogleAuthProvider.credential(idToken);
-      await signInWithCredential(auth, credential);
+      if (!isGoogleSignInAvailable()) {
+        throw new Error('Google Sign-In is not configured. Please check your Client ID.');
+      }
 
-      // Authenticate with our backend
+      // Perform OAuth flow to get ID token
+      const { idToken } = await performGoogleSignIn();
+
+      // Authenticate with our backend (backend validates the token)
       const response = await api.post('/auth/google', { idToken });
       const { user, token, is_onboarded } = response.data;
 
@@ -101,7 +94,17 @@ export default function RegisterScreen({ navigation }: any) {
       dispatch(setToken(token));
       await saveAuthToken(token);
     } catch (e: any) {
-      Alert.alert('Google Sign-up failed', e.message || getApiErrorMessage(e));
+      console.error('Google Sign-up error:', e);
+      const message = e.message || getApiErrorMessage(e);
+
+      if (message.includes('canceled')) {
+        // User canceled the OAuth flow - don't show alert
+        return;
+      } else if (message.includes('not configured')) {
+        Alert.alert('Setup Required', message);
+      } else {
+        Alert.alert('Google Sign-up failed', message);
+      }
     } finally {
       setIsGoogleSubmitting(false);
     }
@@ -403,7 +406,6 @@ export default function RegisterScreen({ navigation }: any) {
               title="Continue with Google"
               onPress={handleGoogleSignUp}
               isLoading={isGoogleSubmitting}
-              disabled={!isGoogleSignInAvailable()}
             />
 
             <SocialAuthButton
@@ -411,7 +413,6 @@ export default function RegisterScreen({ navigation }: any) {
               title="Continue with Apple"
               onPress={handleAppleSignUp}
               isLoading={isAppleSubmitting}
-              disabled={!appleAvailable}
             />
 
             <TouchableOpacity
