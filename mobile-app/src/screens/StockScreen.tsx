@@ -88,10 +88,11 @@ const ShortItem = ({
   const avatarUrl = post.author?.profilePhoto;
 
   const isOwnPost = currentUserHandle === displayName;
-  const isFollowing = Boolean(post.author?.isFollowing);
+  const isInAlliance = Boolean(post.author?.isInAlliance);
+  const isAllianceRequestSent = Boolean(post.author?.isAllianceRequestSent);
 
-  const handleInlineFollow = () => {
-    if (isFollowing || isOwnPost) return;
+  const handleInlineAlliance = () => {
+    if (isInAlliance || isAllianceRequestSent || isOwnPost) return;
     onFollow(post.author?._id || '', displayName);
   };
 
@@ -159,17 +160,19 @@ const ShortItem = ({
             </TouchableOpacity>
 
             {!isOwnPost && (
-              !isFollowing ? (
+              !isInAlliance && !isAllianceRequestSent ? (
                 <TouchableOpacity 
                   style={styles.followButton} 
                   activeOpacity={0.8}
-                  onPress={handleInlineFollow}
+                  onPress={handleInlineAlliance}
                 >
-                  <Text style={styles.followButtonText}>Follow</Text>
+                  <Text style={styles.followButtonText}>Send Alliance Request</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={[styles.followButton, { borderColor: 'transparent', backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                  <Text style={[styles.followButtonText, { color: '#E0E0E0' }]}>Following</Text>
+                  <Text style={[styles.followButtonText, { color: '#E0E0E0' }]}>
+                    {isInAlliance ? 'In Alliance' : 'Alliance Request Sent'}
+                  </Text>
                 </View>
               )
             )}
@@ -282,20 +285,20 @@ export default function StockScreen() {
     }
   };
 
-  const handleFollowUser = async (authorId: string, displayName: string) => {
+  const handleAllianceRequest = async (authorId: string, displayName: string) => {
     try {
       setPosts(prev => prev.map(p => {
         if (p.author && (p.author._id === authorId || p.author.userId === displayName)) {
-          return { ...p, author: { ...p.author, isFollowing: true } };
+          return { ...p, author: { ...p.author, isAllianceRequestSent: true } };
         }
         return p;
       }));
-      await api.post(`/users/u/${encodeURIComponent(displayName)}/follow`);
+      await api.post(`/users/u/${encodeURIComponent(displayName)}/alliance`);
     } catch (e) {
       console.error(e);
       setPosts(prev => prev.map(p => {
         if (p.author && (p.author._id === authorId || p.author.userId === displayName)) {
-          return { ...p, author: { ...p.author, isFollowing: false } };
+          return { ...p, author: { ...p.author, isAllianceRequestSent: false } };
         }
         return p;
       }));
@@ -339,7 +342,7 @@ export default function StockScreen() {
               onOpenProfile={handleOpenProfile}
               onReport={handleReportPost}
               onToggleLike={handleToggleLike}
-              onFollow={handleFollowUser}
+              onFollow={handleAllianceRequest}
             />
           )}
         />

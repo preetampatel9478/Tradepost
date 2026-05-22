@@ -27,10 +27,10 @@ type PublicProfile = {
   bio?: string;
   avatar?: string;
   createdAt?: string;
-  followerCount: number;
-  followingCount: number;
+  allianceCount: number;
   postCount: number;
-  isFollowing?: boolean;
+  isInAlliance?: boolean;
+  isAllianceRequestSent?: boolean;
 };
 
 interface PublicProfileModalProps {
@@ -137,11 +137,11 @@ export default function PublicProfileModal({ visible, userId, onClose }: PublicP
   const handle = profile?.userId ? `@${profile.userId}` : '';
   const bio = String(profile?.bio || '').trim();
 
-  const followerCount = Number(profile?.followerCount || 0);
-  const followingCount = Number(profile?.followingCount || 0);
+  const allianceCount = Number(profile?.allianceCount || 0);
   const postCount = Number(profile?.postCount || 0);
 
-  const isFollowing = Boolean(profile?.isFollowing);
+  const isInAlliance = Boolean(profile?.isInAlliance);
+  const isAllianceRequestSent = Boolean(profile?.isAllianceRequestSent);
 
   const formatCount = (n: number) => {
     if (!Number.isFinite(n)) return '0';
@@ -151,41 +151,41 @@ export default function PublicProfileModal({ visible, userId, onClose }: PublicP
     return String(n);
   };
 
-  const toggleFollow = async () => {
+  const toggleAlliance = async () => {
     if (!userId || !profile) return;
     if (followBusy) return;
 
     setFollowBusy(true);
     try {
-      if (isFollowing) {
-        const res = await api.delete(`/users/u/${encodeURIComponent(userId)}/follow`);
+      if (isInAlliance || isAllianceRequestSent) {
+        // Un-alliance or cancel request
+        const res = await api.delete(`/users/u/${encodeURIComponent(userId)}/alliance`);
         setProfile((prev) =>
           prev
             ? {
                 ...prev,
-                isFollowing: false,
-                followerCount: Number(res.data?.targetFollowerCount ?? Math.max(0, (prev.followerCount || 0) - 1)),
-                followingCount: prev.followingCount,
+                isInAlliance: false,
+                isAllianceRequestSent: false,
+                allianceCount: Number(res.data?.targetAllianceCount ?? Math.max(0, (prev.allianceCount || 0) - 1)),
               }
             : prev
         );
       } else {
-        const res = await api.post(`/users/u/${encodeURIComponent(userId)}/follow`);
+        // Send alliance request
+        const res = await api.post(`/users/u/${encodeURIComponent(userId)}/alliance`);
         setProfile((prev) =>
           prev
             ? {
                 ...prev,
-                isFollowing: true,
-                followerCount: Number(res.data?.targetFollowerCount ?? (prev.followerCount || 0) + 1),
-                followingCount: prev.followingCount,
+                isAllianceRequestSent: true,
+                isInAlliance: res.data?.isInAlliance || false, // depending on auto-accept logic
+                allianceCount: Number(res.data?.targetAllianceCount ?? (prev.allianceCount || 0) + (res.data?.isInAlliance ? 1 : 0)),
               }
             : prev
         );
       }
     } catch (e: any) {
-      // Keep it simple: show error toast/alert equivalent.
-      // (Avoid Alert here to keep UX lightweight; use a banner if needed later.)
-      console.log('Follow error', getApiErrorMessage(e));
+      console.log('Alliance error', getApiErrorMessage(e));
     } finally {
       setFollowBusy(false);
     }
@@ -275,29 +275,29 @@ export default function PublicProfileModal({ visible, userId, onClose }: PublicP
                 style={[
                   styles.followButton,
                   {
-                    backgroundColor: isFollowing ? colors.card : colors.verifiedBlue,
+                    backgroundColor: (isInAlliance || isAllianceRequestSent) ? colors.card : colors.verifiedBlue,
                     borderColor: colors.border,
                   },
                 ]}
-                onPress={toggleFollow}
+                onPress={toggleAlliance}
                 disabled={followBusy}
               >
-                <Text style={[styles.followText, { color: isFollowing ? colors.text : '#fff' }]}
+                <Text style={[styles.followText, { color: (isInAlliance || isAllianceRequestSent) ? colors.text : '#fff' }]}
                 >
-                  {followBusy ? 'Please wait…' : isFollowing ? 'Following' : 'Follow'}
+                  {followBusy ? 'Please wait…' : isInAlliance ? 'In Alliance' : isAllianceRequestSent ? 'Alliance Request Sent' : 'Send Alliance Request'}
                 </Text>
               </TouchableOpacity>
 
               <View style={[styles.statsRow, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
                 <View style={styles.statCol}>
-                  <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(followerCount)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+                  <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(allianceCount)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Alliance Members</Text>
                 </View>
                 <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.statCol}>
-                  <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(followingCount)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
+                  <Text style={[styles.statValue, { color: colors.text }]}>🔥</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>30 Day Streak</Text>
                 </View>
                 <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.statCol}>

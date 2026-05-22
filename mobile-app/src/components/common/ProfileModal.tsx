@@ -46,8 +46,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const { colors, theme, themeMode, setThemeMode } = useTheme();
   const { language: appLanguage, setLanguage: setAppLanguage, t } = useLanguage();
 
-  const [profileStats, setProfileStats] = useState<{ followerCount: number; followingCount: number; postCount: number }>(
-    { followerCount: 0, followingCount: 0, postCount: 0 }
+  const [profileStats, setProfileStats] = useState<{ allianceCount: number; postCount: number }>(
+    { allianceCount: 0, postCount: 0 }
   );
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
 
@@ -66,8 +66,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     | 'helpTerms'
     | 'helpAbout'
     | 'posts'
-    | 'followers'
-    | 'following'
+    | 'allianceList'
     | 'editPost'
     | 'postComments';
   const [panel, setPanel] = useState<Panel>('none');
@@ -103,9 +102,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
   const [listLoading, setListLoading] = useState(false);
   const [myPosts, setMyPosts] = useState<Array<any>>([]);
 
-  type SocialUser = { id: string; userId: string; name?: string; avatar?: string; isFollowing?: boolean };
-  const [followers, setFollowers] = useState<Array<SocialUser>>([]);
-  const [following, setFollowing] = useState<Array<SocialUser>>([]);
+  type SocialUser = { id: string; userId: string; name?: string; avatar?: string; isInAlliance?: boolean };
+  const [allianceMembers, setAllianceMembers] = useState<Array<SocialUser>>([]);
   const [listFollowBusyUserId, setListFollowBusyUserId] = useState<string | null>(null);
 
   const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(null);
@@ -146,8 +144,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
       try {
         const res = await api.get('/users/me');
         const data = res.data as {
-          followerCount?: number;
-          followingCount?: number;
+          allianceCount?: number;
           postCount?: number;
           avatar?: string;
           name?: string;
@@ -166,8 +163,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
 
         if (!isMounted) return;
         setProfileStats({
-          followerCount: Number(data.followerCount ?? 0),
-          followingCount: Number(data.followingCount ?? 0),
+          allianceCount: Number(data.allianceCount ?? 0),
           postCount: Number(data.postCount ?? 0),
         });
         setProfileAvatar(data.avatar && String(data.avatar).trim() ? String(data.avatar) : null);
@@ -203,7 +199,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
 
   useEffect(() => {
     if (!visible) return;
-    if (!['posts', 'followers', 'following'].includes(panel)) return;
+    if (!['posts', 'allianceList'].includes(panel)) return;
 
     let isMounted = true;
     setListLoading(true);
@@ -215,21 +211,15 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
           if (!isMounted) return;
           setMyPosts((res.data?.items as any[]) || []);
         }
-        if (panel === 'followers') {
-          const res = await api.get('/users/me/followers?limit=50&skip=0');
+        if (panel === 'allianceList') {
+          const res = await api.get('/users/me/alliance?limit=50&skip=0');
           if (!isMounted) return;
-          setFollowers((res.data?.items as any[]) || []);
-        }
-        if (panel === 'following') {
-          const res = await api.get('/users/me/following?limit=50&skip=0');
-          if (!isMounted) return;
-          setFollowing((res.data?.items as any[]) || []);
+          setAllianceMembers((res.data?.items as any[]) || []);
         }
       } catch {
         if (!isMounted) return;
         if (panel === 'posts') setMyPosts([]);
-        if (panel === 'followers') setFollowers([]);
-        if (panel === 'following') setFollowing([]);
+        if (panel === 'allianceList') setAllianceMembers([]);
       } finally {
         if (isMounted) setListLoading(false);
       }
@@ -316,7 +306,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     setPublicProfileVisible(true);
   };
 
-  const toggleFollowFromList = async (targetUserId: string, nextFollowState: boolean) => {
+  const toggleAllianceFromList = async (targetUserId: string, nextAllianceState: boolean) => {
     const clean = String(targetUserId || '').trim();
     if (!clean) return;
     if (clean === user?.userId) return;
@@ -324,28 +314,22 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
     try {
       setListFollowBusyUserId(clean);
 
-      if (nextFollowState) {
-        const res = await api.post(`/users/u/${encodeURIComponent(clean)}/follow`);
-        const nextFollowingCount = Number(res.data?.followingCount);
-        if (Number.isFinite(nextFollowingCount)) {
-          setProfileStats((s) => ({ ...s, followingCount: nextFollowingCount }));
+      if (nextAllianceState) {
+        const res = await api.post(`/users/u/${encodeURIComponent(clean)}/alliance`);
+        const nextAllianceCount = Number(res.data?.allianceCount);
+        if (Number.isFinite(nextAllianceCount)) {
+          setProfileStats((s) => ({ ...s, allianceCount: nextAllianceCount }));
         }
 
-        setFollowers((prev) => prev.map((u) => (u.userId === clean ? { ...u, isFollowing: true } : u)));
-        setFollowing((prev) => {
-          const mapped = prev.map((u) => (u.userId === clean ? { ...u, isFollowing: true } : u));
-          return mapped;
-        });
+        setAllianceMembers((prev) => prev.map((u) => (u.userId === clean ? { ...u, isInAlliance: true } : u)));
       } else {
-        const res = await api.delete(`/users/u/${encodeURIComponent(clean)}/follow`);
-        const nextFollowingCount = Number(res.data?.followingCount);
-        if (Number.isFinite(nextFollowingCount)) {
-          setProfileStats((s) => ({ ...s, followingCount: nextFollowingCount }));
+        const res = await api.delete(`/users/u/${encodeURIComponent(clean)}/alliance`);
+        const nextAllianceCount = Number(res.data?.allianceCount);
+        if (Number.isFinite(nextAllianceCount)) {
+          setProfileStats((s) => ({ ...s, allianceCount: nextAllianceCount }));
         }
 
-        setFollowers((prev) => prev.map((u) => (u.userId === clean ? { ...u, isFollowing: false } : u)));
-        // If you unfollow someone, remove them from the "following" list view.
-        setFollowing((prev) => prev.filter((u) => u.userId !== clean));
+        setAllianceMembers((prev) => prev.filter((u) => u.userId !== clean));
       }
     } catch (err) {
       Alert.alert('Error', getApiErrorMessage(err));
@@ -605,19 +589,19 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
 
             {/* Stats Row */}
             <View style={[styles.statsRow, { backgroundColor: theme === 'light' ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)' }]}>
-              <TouchableOpacity style={styles.statColumn} activeOpacity={0.85} onPress={() => setPanel('followers')}>
-                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.followerCount)}</Text>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+              <TouchableOpacity style={styles.statColumn} activeOpacity={0.85} onPress={() => setPanel('allianceList')}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.allianceCount)}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Alliance Members</Text>
+              </TouchableOpacity>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <TouchableOpacity style={styles.statColumn} activeOpacity={0.85}>
+                <Text style={[styles.statValue, { color: colors.text }]}>🔥</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>30 Day Streak</Text>
               </TouchableOpacity>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <TouchableOpacity style={styles.statColumn} activeOpacity={0.85} onPress={() => setPanel('posts')}>
                 <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.postCount)}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Posts</Text>
-              </TouchableOpacity>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-              <TouchableOpacity style={styles.statColumn} activeOpacity={0.85} onPress={() => setPanel('following')}>
-                <Text style={[styles.statValue, { color: colors.text }]}>{formatCount(profileStats.followingCount)}</Text>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
               </TouchableOpacity>
             </View>
 
@@ -735,10 +719,8 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                           ? 'Edit Post'
                           : panel === 'postComments'
                             ? 'Post Comments'
-                        : panel === 'followers'
-                          ? 'Followers'
-                          : panel === 'following'
-                            ? 'Following'
+                        : panel === 'allianceList'
+                          ? 'Alliance Members'
                             : 'Help Support'}
               </Text>
               <TouchableOpacity onPress={closeOrBackPanel} activeOpacity={0.8}>
@@ -1627,17 +1609,17 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                     </>
                   )}
                 </>
-              ) : panel === 'followers' ? (
+              ) : panel === 'allianceList' ? (
                 <>
                   {listLoading ? (
                     <View style={styles.centerPad}>
                       <ActivityIndicator color={colors.verifiedBlue} />
-                      <Text style={[styles.helpText, { color: colors.textSecondary, marginTop: 10 }]}>Loading followers…</Text>
+                      <Text style={[styles.helpText, { color: colors.textSecondary, marginTop: 10 }]}>Loading alliance members…</Text>
                     </View>
-                  ) : followers.length === 0 ? (
-                    <Text style={[styles.helpText, { color: colors.textSecondary }]}>No followers yet.</Text>
+                  ) : allianceMembers.length === 0 ? (
+                    <Text style={[styles.helpText, { color: colors.textSecondary }]}>No alliance members yet.</Text>
                   ) : (
-                    followers.map((u) => (
+                    allianceMembers.map((u) => (
                       <View key={u.id} style={[styles.userListRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
                         <TouchableOpacity
                           style={styles.userListRowLeft}
@@ -1659,7 +1641,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                           </View>
                         </TouchableOpacity>
 
-                        {u.isFollowing ? (
+                        {u.isInAlliance ? (
                           <View
                             style={[
                               styles.followButton,
@@ -1670,19 +1652,19 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                               },
                             ]}
                           >
-                            <Text style={[styles.followButtonText, { color: colors.textSecondary }]}>Following</Text>
+                            <Text style={[styles.followButtonText, { color: colors.textSecondary }]}>In Alliance</Text>
                           </View>
                         ) : (
                           <TouchableOpacity
                             style={[styles.followButton, { backgroundColor: colors.verifiedBlue, borderColor: colors.border }]}
-                            onPress={() => toggleFollowFromList(u.userId, true)}
+                            onPress={() => toggleAllianceFromList(u.userId, true)}
                             activeOpacity={0.85}
                             disabled={listFollowBusyUserId === u.userId}
                           >
                             {listFollowBusyUserId === u.userId ? (
                               <ActivityIndicator color="#fff" />
                             ) : (
-                              <Text style={[styles.followButtonText, { color: '#fff' }]}>Follow</Text>
+                              <Text style={[styles.followButtonText, { color: '#fff' }]}>Send Alliance Request</Text>
                             )}
                           </TouchableOpacity>
                         )}
@@ -1690,61 +1672,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                     ))
                   )}
                 </>
-              ) : panel === 'following' ? (
-                <>
-                  {listLoading ? (
-                    <View style={styles.centerPad}>
-                      <ActivityIndicator color={colors.verifiedBlue} />
-                      <Text style={[styles.helpText, { color: colors.textSecondary, marginTop: 10 }]}>Loading following…</Text>
-                    </View>
-                  ) : following.length === 0 ? (
-                    <Text style={[styles.helpText, { color: colors.textSecondary }]}>Not following anyone yet.</Text>
-                  ) : (
-                    following.map((u) => (
-                      <View key={u.id} style={[styles.userListRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                        <TouchableOpacity
-                          style={styles.userListRowLeft}
-                          onPress={() => openPublicProfile(u.userId)}
-                          activeOpacity={0.8}
-                        >
-                          <View style={[styles.userListAvatar, { borderColor: colors.border, backgroundColor: colors.searchBg }]}>
-                            {u.avatar ? (
-                              <Image source={{ uri: u.avatar }} style={styles.userListAvatarImg} />
-                            ) : (
-                              <Text style={[styles.userListAvatarFallback, { color: colors.text }]}>
-                                {(u.userId || 'T').slice(0, 1).toUpperCase()}
-                              </Text>
-                            )}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.menuItemText, { color: colors.text }]}>{u.name?.trim() ? u.name : u.userId}</Text>
-                            <Text style={[styles.menuSubText, { color: colors.textSecondary }]}>@{u.userId}</Text>
-                          </View>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.followButton,
-                            {
-                              backgroundColor: 'transparent',
-                              borderColor: colors.border,
-                            },
-                          ]}
-                          onPress={() => toggleFollowFromList(u.userId, false)}
-                          activeOpacity={0.85}
-                          disabled={listFollowBusyUserId === u.userId}
-                        >
-                          {listFollowBusyUserId === u.userId ? (
-                            <ActivityIndicator color={colors.textSecondary} />
-                          ) : (
-                            <Text style={[styles.followButtonText, { color: colors.textSecondary }]}>Unfollow</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
-                    ))
-                  )}
-                </>
-              ) : (
+              ) : panel === 'editPost' ? (
                 <TouchableOpacity
                   style={[styles.saveButton, { backgroundColor: colors.verifiedBlue, opacity: isSaving ? 0.7 : 1 }]}
                   onPress={saveAll}
@@ -1760,7 +1688,7 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                     <Text style={styles.saveButtonText}>Save Changes</Text>
                   )}
                 </TouchableOpacity>
-              )}
+              ) : null}
             </ScrollView>
           </View>
         </Modal>

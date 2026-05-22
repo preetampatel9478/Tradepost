@@ -11,7 +11,7 @@ import { getAuthedSocket } from '../services/socket';
 import GlobalHeader from '../components/common/GlobalHeader';
 import HomeScreen from '../screens/HomeScreen';
 import StockScreen from '../screens/StockScreen';
-import NewsScreen from '../screens/NewsScreen';
+import ComposePostScreen from '../screens/ComposePostScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ChatScreen from '../screens/ChatScreen';
 import TagFeedScreen from '../screens/TagFeedScreen';
@@ -138,7 +138,7 @@ function AppTabs() {
       />
       <Tab.Screen
         name="Opinion"
-        component={NewsScreen}
+        component={ComposePostScreen}
         options={{
           title: 'Post Your Opinion',
         }}

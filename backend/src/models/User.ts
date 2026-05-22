@@ -95,28 +95,29 @@ const userSchema = new Schema(
       default: '',
     },
 
-    // Social graph (persisted)
-    followers: {
+    // Social graph (persisted) - Alliance System
+    allianceMembers: {
       type: [Schema.Types.ObjectId],
       ref: 'User',
       default: [],
       select: false,
     },
-    following: {
+    allianceCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pendingAllianceRequests: {
       type: [Schema.Types.ObjectId],
       ref: 'User',
       default: [],
       select: false,
     },
-    followerCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    followingCount: {
-      type: Number,
-      default: 0,
-      min: 0,
+    sentAllianceRequests: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+      select: false,
     },
   },
   {

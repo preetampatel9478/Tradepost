@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { getAuthToken, removeAuthToken } from '../utils/secureTokenStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -140,7 +141,7 @@ class APIClient {
           }
         }
 
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await getAuthToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -180,7 +181,7 @@ class APIClient {
 
         if (error.response?.status === 401) {
           // Handle token expiry
-          await AsyncStorage.removeItem('authToken');
+          await removeAuthToken();
           // Trigger logout action
         }
         return Promise.reject(error);

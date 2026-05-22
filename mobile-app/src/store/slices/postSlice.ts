@@ -8,7 +8,8 @@ export interface ApiPost {
     _id: string;
     userId: string;
     profilePhoto?: string;
-    isFollowing?: boolean;
+    isInAlliance?: boolean;
+    isAllianceRequestSent?: boolean;
   };
   content: string;
   sentiment: 'bullish' | 'bearish' | 'neutral';

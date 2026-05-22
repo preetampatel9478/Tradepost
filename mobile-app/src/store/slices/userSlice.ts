@@ -5,8 +5,7 @@ interface UserProfile {
   name: string;
   email: string;
   avatar?: string;
-  followers: number;
-  following: number;
+  allianceCount: number;
   isVerified: boolean;
 }
 

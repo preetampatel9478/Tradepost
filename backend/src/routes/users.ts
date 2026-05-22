@@ -38,7 +38,7 @@ router.get('/me', auth, async (req: AuthenticatedRequest, res, next) => {
     if (!req.userId) return next(createError(401, 'Unauthorized'));
 
     const user = await User.findById(req.userId).select(
-      '_id userId mobileNumber name email bio profilePhoto createdAt followerCount followingCount language accountPrivate notifyPush notifyEmail themeMode'
+      '_id userId mobileNumber name email bio profilePhoto createdAt allianceCount language accountPrivate notifyPush notifyEmail themeMode'
     );
     if (!user) return next(createError(404, 'User not found'));
 
@@ -53,8 +53,7 @@ router.get('/me', auth, async (req: AuthenticatedRequest, res, next) => {
       bio: (user as any).bio || '',
       avatar: user.profilePhoto,
       createdAt: user.createdAt,
-      followerCount: user.followerCount ?? 0,
-      followingCount: user.followingCount ?? 0,
+      allianceCount: user.allianceCount ?? 0,
       postCount,
       settings: {
         language: (user as any).language || 'en',
@@ -69,48 +68,8 @@ router.get('/me', auth, async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-// Friends (Union of Followers and Following)
-router.get('/me/friends', auth, async (req: AuthenticatedRequest, res, next) => {
-  try {
-    if (!req.userId) return next(createError(401, 'Unauthorized'));
-
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const skip = Math.max(0, Number(req.query.skip) || 0);
-
-    const me = await User.findById(req.userId).select('+followers +following');
-    if (!me) return next(createError(404, 'User not found'));
-
-    const followingStrs = ((me as any).following as any[] || []).map(id => id.toString());
-    const followerStrs = ((me as any).followers as any[] || []).map(id => id.toString());
-    
-    // Union both arrays to get a complete list of friends
-    const allFriends = Array.from(new Set([...followingStrs, ...followerStrs]));
-
-    const pagedIds = allFriends.slice(skip, skip + limit);
-    const populated = await User.find({ _id: { $in: pagedIds } }).select('_id userId name profilePhoto');
-
-    const items = populated.map((u: any) => ({
-      id: u._id,
-      userId: u.userId,
-      name: u.name || '',
-      avatar: u.profilePhoto,
-      isFollowing: true,
-      isFollower: true,
-    }));
-
-    res.json({
-      success: true,
-      items,
-      hasMore: skip + limit < allFriends.length,
-      totalFriends: allFriends.length,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Current user's followers list
-router.get('/me/followers', auth, async (req: AuthenticatedRequest, res, next) => {
+// Current user's alliance members
+router.get('/me/alliance', auth, async (req: AuthenticatedRequest, res, next) => {
   try {
     if (!req.userId) return next(createError(401, 'Unauthorized'));
 
@@ -118,44 +77,22 @@ router.get('/me/followers', auth, async (req: AuthenticatedRequest, res, next) =
     const skip = Math.max(0, Number(req.query.skip) || 0);
 
     const me = await User.findById(req.userId)
-      .select('_id followerCount +followers')
-      .slice('followers', [skip, limit])
-      .populate({ path: 'followers', select: '_id userId name profilePhoto' });
+      .select('_id allianceCount +allianceMembers')
+      .slice('allianceMembers', [skip, limit])
+      .populate({ path: 'allianceMembers', select: '_id userId name profilePhoto' });
     if (!me) return next(createError(404, 'User not found'));
 
-    const followers = ((me as any).followers as any[]) || [];
-
-    // Compute isFollowing for only this page of followers (production-friendly).
-    const followerObjectIds = followers
-      .map((u: any) => u?._id)
-      .filter(Boolean)
-      .map((id: any) => new mongoose.Types.ObjectId(String(id)));
-
-    let followingIds = new Set<string>();
-    if (followerObjectIds.length) {
-      const meId = new mongoose.Types.ObjectId(String(req.userId));
-      const agg = await User.aggregate([
-        { $match: { _id: meId } },
-        {
-          $project: {
-            followingFiltered: { $setIntersection: ['$following', followerObjectIds] },
-          },
-        },
-      ]);
-      const filtered = (agg?.[0]?.followingFiltered as any[]) || [];
-      followingIds = new Set(filtered.map((id: any) => String(id)));
-    }
-
-    const items = followers.map((u: any) => ({
+    const members = ((me as any).allianceMembers as any[]) || [];
+    const items = members.map((u: any) => ({
       id: u._id,
       userId: u.userId,
       name: (u as any).name || '',
       avatar: u.profilePhoto,
-      isFollowing: followingIds.has(String(u._id)),
+      isInAlliance: true,
     }));
 
     return res.json({
-      total: me.followerCount ?? 0,
+      total: (me as any).allianceCount ?? 0,
       items,
       limit,
       skip,
@@ -165,8 +102,8 @@ router.get('/me/followers', auth, async (req: AuthenticatedRequest, res, next) =
   }
 });
 
-// Current user's following list
-router.get('/me/following', auth, async (req: AuthenticatedRequest, res, next) => {
+// Current user's pending alliance requests
+router.get('/me/pending-requests', auth, async (req: AuthenticatedRequest, res, next) => {
   try {
     if (!req.userId) return next(createError(401, 'Unauthorized'));
 
@@ -174,21 +111,34 @@ router.get('/me/following', auth, async (req: AuthenticatedRequest, res, next) =
     const skip = Math.max(0, Number(req.query.skip) || 0);
 
     const me = await User.findById(req.userId)
-      .select('_id followingCount +following')
-      .slice('following', [skip, limit])
-      .populate({ path: 'following', select: '_id userId name profilePhoto' });
+      .select('_id +pendingAllianceRequests')
+      .slice('pendingAllianceRequests', [skip, limit])
+      .populate({ path: 'pendingAllianceRequests', select: '_id userId name profilePhoto' });
     if (!me) return next(createError(404, 'User not found'));
 
-    const following = ((me as any).following as any[]) || [];
-    const items = following.map((u: any) => ({
+    const requests = ((me as any).pendingAllianceRequests as any[]) || [];
+    const items = requests.map((u: any) => ({
       id: u._id,
       userId: u.userId,
       name: (u as any).name || '',
       avatar: u.profilePhoto,
-      isFollowing: true,
     }));
 
+    // For pending requests, we can just return the array length as total for simplicity in MVP, 
+    // or if the model stores a count we could use it. Here we use the actual array length loaded.
+    const total = await User.findById(req.userId).select('pendingAllianceRequests');
+    const totalCount = (total as any)?.pendingAllianceRequests?.length || 0;
+
     return res.json({
+      total: totalCount,
+      items,
+      limit,
+      skip,
+    });
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
       total: me.followingCount ?? 0,
       items,
       limit,
@@ -274,7 +224,7 @@ router.put('/me', auth, async (req: AuthenticatedRequest, res, next) => {
     }
 
     const updated = await User.findByIdAndUpdate(req.userId, patch, { new: true }).select(
-      '_id userId mobileNumber name email bio profilePhoto createdAt followerCount followingCount language accountPrivate notifyPush notifyEmail themeMode'
+      '_id userId mobileNumber name email bio profilePhoto createdAt allianceCount language accountPrivate notifyPush notifyEmail themeMode'
     );
     if (!updated) return next(createError(404, 'User not found'));
 
@@ -343,17 +293,22 @@ router.get('/u/:userId', optionalAuth, async (req: AuthenticatedRequest, res, ne
     if (!userId) return next(createError(400, 'userId is required'));
 
     const user = await User.findOne({ userId }).select(
-      '_id userId name bio profilePhoto createdAt followerCount followingCount'
+      '_id userId name bio profilePhoto createdAt allianceCount'
     );
     if (!user) return next(createError(404, 'User not found'));
 
     const postCount = await Post.countDocuments({ author: user._id });
 
-    let isFollowing = false;
+    let isInAlliance = false;
+    let isAllianceRequestSent = false;
+    
     if (req.userId) {
-      const me = await User.findById(req.userId).select('_id +following');
-      const following = ((me as any)?.following as any[]) || [];
-      isFollowing = following.some((id) => String(id) === String(user._id));
+      const me = await User.findById(req.userId).select('_id +allianceMembers +sentAllianceRequests');
+      const members = ((me as any)?.allianceMembers as any[]) || [];
+      const sentRequests = ((me as any)?.sentAllianceRequests as any[]) || [];
+
+      isInAlliance = members.some((id) => String(id) === String(user._id));
+      isAllianceRequestSent = sentRequests.some((id) => String(id) === String(user._id));
     }
 
     return res.json({
@@ -363,10 +318,10 @@ router.get('/u/:userId', optionalAuth, async (req: AuthenticatedRequest, res, ne
       bio: (user as any).bio || '',
       avatar: user.profilePhoto,
       createdAt: user.createdAt,
-      followerCount: user.followerCount ?? 0,
-      followingCount: user.followingCount ?? 0,
+      allianceCount: user.allianceCount ?? 0,
       postCount,
-      isFollowing,
+      isInAlliance,
+      isAllianceRequestSent,
     });
   } catch (err) {
     return next(createError(500, 'Server error'));
@@ -416,51 +371,35 @@ router.get('/u/:userId/posts', optionalAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-// Follow / unfollow by username
-router.post('/u/:userId/follow', auth, async (req: AuthenticatedRequest, res, next) => {
+// Send an Alliance Request
+router.post('/u/:userId/alliance', auth, async (req: AuthenticatedRequest, res, next) => {
   try {
     if (!req.userId) return next(createError(401, 'Unauthorized'));
     const targetUserId = String(req.params.userId || '').trim();
     if (!targetUserId) return next(createError(400, 'userId is required'));
 
-    const me = await User.findById(req.userId).select('_id userId');
+    const me = await User.findById(req.userId).select('_id userId allianceMembers');
     if (!me) return next(createError(404, 'User not found'));
-    if (me.userId === targetUserId) return next(createError(400, 'Cannot follow yourself'));
+    if (me.userId === targetUserId) return next(createError(400, 'Cannot form alliance with yourself'));
 
     const target = await User.findOne({ userId: targetUserId }).select('_id userId');
     if (!target) return next(createError(404, 'User not found'));
+    
+    const isAlreadyAlliance = (me as any).allianceMembers?.includes(target._id);
+    if (isAlreadyAlliance) return next(createError(400, 'Already in alliance'));
 
-    // Add to following only if not already following
-    const updatedMe = await User.findOneAndUpdate(
-      { _id: me._id, following: { $ne: target._id } },
-      { $addToSet: { following: target._id }, $inc: { followingCount: 1 } },
-      { new: true }
-    ).select('_id followingCount');
+    // Add to target's pending requests and me's sent requests
+    await User.updateOne({ _id: target._id }, { $addToSet: { pendingAllianceRequests: me._id } });
+    await User.updateOne({ _id: me._id }, { $addToSet: { sentAllianceRequests: target._id } });
 
-    if (updatedMe) {
-      await User.findOneAndUpdate(
-        { _id: target._id, followers: { $ne: me._id } },
-        { $addToSet: { followers: me._id }, $inc: { followerCount: 1 } },
-        { new: true }
-      ).select('_id followerCount');
-    }
-
-    const meFresh = await User.findById(me._id).select('followerCount followingCount');
-    const targetFresh = await User.findById(target._id).select('followerCount followingCount');
-    return res.json({
-      success: true,
-      followerCount: meFresh?.followerCount ?? 0,
-      followingCount: meFresh?.followingCount ?? 0,
-      targetFollowerCount: targetFresh?.followerCount ?? 0,
-      targetFollowingCount: targetFresh?.followingCount ?? 0,
-      isFollowing: true,
-    });
+    return res.json({ success: true, isAllianceRequestSent: true });
   } catch (err) {
     return next(createError(500, 'Server error'));
   }
 });
 
-router.delete('/u/:userId/follow', auth, async (req: AuthenticatedRequest, res, next) => {
+// Accept an Alliance Request
+router.post('/u/:userId/alliance/accept', auth, async (req: AuthenticatedRequest, res, next) => {
   try {
     if (!req.userId) return next(createError(401, 'Unauthorized'));
     const targetUserId = String(req.params.userId || '').trim();
@@ -472,30 +411,81 @@ router.delete('/u/:userId/follow', auth, async (req: AuthenticatedRequest, res, 
     const target = await User.findOne({ userId: targetUserId }).select('_id userId');
     if (!target) return next(createError(404, 'User not found'));
 
-    const updatedMe = await User.findOneAndUpdate(
-      { _id: me._id, following: target._id },
-      { $pull: { following: target._id }, $inc: { followingCount: -1 } },
-      { new: true }
-    ).select('_id followingCount');
+    // Remove from pending/sent requests
+    await User.updateOne({ _id: me._id }, { $pull: { pendingAllianceRequests: target._id } });
+    await User.updateOne({ _id: target._id }, { $pull: { sentAllianceRequests: me._id } });
 
+    // Add to alliance members
+    const updatedMe = await User.findOneAndUpdate(
+      { _id: me._id, allianceMembers: { $ne: target._id } },
+      { $addToSet: { allianceMembers: target._id }, $inc: { allianceCount: 1 } },
+      { new: true }
+    );
+    
     if (updatedMe) {
       await User.findOneAndUpdate(
-        { _id: target._id, followers: me._id },
-        { $pull: { followers: me._id }, $inc: { followerCount: -1 } },
-        { new: true }
-      ).select('_id followerCount');
+        { _id: target._id, allianceMembers: { $ne: me._id } },
+        { $addToSet: { allianceMembers: me._id }, $inc: { allianceCount: 1 } }
+      );
     }
 
-    const meFresh = await User.findById(me._id).select('followerCount followingCount');
-    const targetFresh = await User.findById(target._id).select('followerCount followingCount');
-    return res.json({
-      success: true,
-      followerCount: meFresh?.followerCount ?? 0,
-      followingCount: meFresh?.followingCount ?? 0,
-      targetFollowerCount: targetFresh?.followerCount ?? 0,
-      targetFollowingCount: targetFresh?.followingCount ?? 0,
-      isFollowing: false,
-    });
+    return res.json({ success: true, isInAlliance: true });
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
+
+// Reject an Alliance Request
+router.post('/u/:userId/alliance/reject', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+    const targetUserId = String(req.params.userId || '').trim();
+    if (!targetUserId) return next(createError(400, 'userId is required'));
+
+    const me = await User.findById(req.userId).select('_id userId');
+    const target = await User.findOne({ userId: targetUserId }).select('_id userId');
+    
+    if (!me || !target) return next(createError(404, 'User not found'));
+
+    await User.updateOne({ _id: me._id }, { $pull: { pendingAllianceRequests: target._id } });
+    await User.updateOne({ _id: target._id }, { $pull: { sentAllianceRequests: me._id } });
+
+    return res.json({ success: true, isInAlliance: false, isAllianceRequestSent: false });
+  } catch (err) {
+    return next(createError(500, 'Server error'));
+  }
+});
+
+// Remove Alliance Member or Cancel Sent Request
+router.delete('/u/:userId/alliance', auth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    if (!req.userId) return next(createError(401, 'Unauthorized'));
+    const targetUserId = String(req.params.userId || '').trim();
+    if (!targetUserId) return next(createError(400, 'userId is required'));
+
+    const me = await User.findById(req.userId).select('_id userId');
+    const target = await User.findOne({ userId: targetUserId }).select('_id userId');
+    
+    if (!me || !target) return next(createError(404, 'User not found'));
+
+    // Try to pull from requests just in case we are canceling
+    await User.updateOne({ _id: me._id }, { $pull: { sentAllianceRequests: target._id, pendingAllianceRequests: target._id } });
+    await User.updateOne({ _id: target._id }, { $pull: { pendingAllianceRequests: me._id, sentAllianceRequests: me._id } });
+
+    // Remove from alliance
+    const updatedMe = await User.findOneAndUpdate(
+      { _id: me._id, allianceMembers: target._id },
+      { $pull: { allianceMembers: target._id }, $inc: { allianceCount: -1 } }
+    );
+    
+    if (updatedMe) {
+      await User.findOneAndUpdate(
+        { _id: target._id, allianceMembers: me._id },
+        { $pull: { allianceMembers: me._id }, $inc: { allianceCount: -1 } }
+      );
+    }
+
+    return res.json({ success: true, isInAlliance: false, isAllianceRequestSent: false });
   } catch (err) {
     return next(createError(500, 'Server error'));
   }
