@@ -10,7 +10,28 @@ import logger from '../utils/logger';
 import { validateUsername, sanitizeUsername, USERNAME_RULES } from '../utils/usernameValidator';
 
 const router = express.Router();
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || 'dummy-client-id');
+const googleClient = new OAuth2Client();
+
+function parseCsvEnv(value: unknown): string[] {
+  return String(value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function getGoogleAudiences(): string[] {
+  const envs = [
+    ...parseCsvEnv(process.env.GOOGLE_CLIENT_IDS),
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_WEB_CLIENT_ID,
+    process.env.GOOGLE_EXPO_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+  ];
+
+  const unique = new Set(envs.map((v) => String(v ?? '').trim()).filter(Boolean));
+  return Array.from(unique);
+}
 
 /**
  * POST /api/auth/google
@@ -102,12 +123,18 @@ router.post('/google', async (req, res, next) => {
     const { idToken } = req.body;
     if (!idToken) return next(createError(400, 'idToken is required'));
 
+    const audiences = getGoogleAudiences();
+    if (audiences.length === 0) {
+      logger.error('Google auth misconfigured: no GOOGLE_CLIENT_ID(S) provided');
+      return next(createError(500, 'Google authentication is not configured'));
+    }
+
     // Verify Google token on the server-side (never trust client tokens)
     let payload;
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID || 'dummy-client-id',
+        audience: audiences,
       });
       payload = ticket.getPayload();
     } catch (err) {

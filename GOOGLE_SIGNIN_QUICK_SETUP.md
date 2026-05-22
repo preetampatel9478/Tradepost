@@ -64,8 +64,8 @@
 **Web/Expo Client ID:**
 1. Go to **Credentials** → **Create Credentials** → **OAuth client ID** → **Web application**
 2. Add URIs:
-   - `http://localhost:8081`
-   - `http://localhost:19000` (Expo)
+  - `https://auth.expo.io/@<expo-owner>/<expo-slug>` (Expo Go / AuthSession proxy)
+    - For this repo’s default config: `https://auth.expo.io/@anonymous/tradepost`
 3. Create and copy the **Client ID** (this is your `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`)
 
 **Android Client ID (optional, for production builds):**

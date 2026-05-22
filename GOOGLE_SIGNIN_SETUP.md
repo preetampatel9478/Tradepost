@@ -69,9 +69,9 @@ Google Sign-In is already integrated in your Login and Register screens. Follow 
 **For Web (React Native Expo):**
 1. Create credentials → **OAuth client ID** → **Web application**
 2. Add authorized redirect URIs:
-   - `http://localhost:8081`
-   - `http://localhost:19000` (Expo)
-   - Your production domain (e.g., `https://app.tradepost.com`)
+  - `https://auth.expo.io/@<expo-owner>/<expo-slug>` (Expo Go / AuthSession proxy)
+    - For this repo’s default config: `https://auth.expo.io/@anonymous/tradepost`
+  - (Optional) your production domain (only if you implement a web app)
 3. Click Create
 4. Copy the **Web Client ID** (this is your `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`)
 

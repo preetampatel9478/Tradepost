@@ -1,14 +1,20 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
+import * as Crypto from 'expo-crypto';
 
 // Completes pending auth sessions on iOS / web.
 WebBrowser.maybeCompleteAuthSession();
 
-const clientId = (process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '')
-  .trim()
-  .replace(/^"(.*)"$/, '$1')
-  .replace(/^'(.*)'$/, '$1');
+function sanitizeClientId(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/^"(.*)"$/, '$1')
+    .replace(/^'(.*)'$/, '$1');
+}
+
+const clientId = sanitizeClientId(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) ||
+  sanitizeClientId((Constants.expoConfig?.extra as any)?.googleWebClientId);
 
 // Cache for the discovery document
 let cachedDiscovery: any = null;
@@ -44,25 +50,28 @@ export const performGoogleSignIn = async () => {
     }
 
     const discovery = cachedDiscovery as AuthSession.DiscoveryDocument;
-    const scopes = ['profile', 'email'];
+    const scopes = ['openid', 'profile', 'email'];
 
     // When using the Expo AuthSession proxy (recommended for Expo Go), the provider redirect URI
     // must be the proxy URL (https://auth.expo.io/@owner/slug). The proxy will then redirect back
     // to the app return URL (exp://.../--/expo-auth-session).
     const redirectUri = useProxy && proxyRedirectUri ? proxyRedirectUri : AuthSession.makeRedirectUri();
 
-    // Build + load an AuthRequest (PKCE enabled by default)
+    // Use ID token (implicit/hybrid) to avoid token exchange on-device.
+    // Exchanging an auth code for tokens for a Web OAuth client requires a client_secret,
+    // which must never be embedded in a mobile app.
+    const nonce = Crypto.randomUUID();
+
+    // Build + load an AuthRequest
     const request = await AuthSession.loadAsync(
       {
         clientId: clientId!,
         redirectUri,
-        responseType: AuthSession.ResponseType.Code,
+        responseType: AuthSession.ResponseType.IdToken,
         scopes,
         prompt: AuthSession.Prompt.Consent,
-        usePKCE: true,
         extraParams: {
-          // Helps ensure refresh tokens are returned in some configurations.
-          access_type: 'offline',
+          nonce,
         },
       },
       discovery
@@ -99,27 +108,12 @@ export const performGoogleSignIn = async () => {
       throw new Error(`OAuth authorization ${result.type}`);
     }
 
-    const code = result.params?.code;
-    if (!code) {
-      throw new Error('No authorization code returned from Google');
-    }
-
-    // Exchange the code for tokens using expo-auth-session helpers
-    const tokenResponse = await AuthSession.exchangeCodeAsync(
-      {
-        clientId: clientId!,
-        code,
-        redirectUri,
-        extraParams: request.codeVerifier
-          ? {
-              code_verifier: request.codeVerifier,
-            }
-          : undefined,
-      },
-      discovery
-    );
-
-    const idToken = tokenResponse.idToken;
+    const idToken =
+      // Some response types populate authentication
+      (result as any)?.authentication?.idToken ||
+      // Google returns id_token in params
+      (result as any)?.params?.id_token ||
+      (result as any)?.params?.idToken;
 
     if (!idToken) {
       throw new Error('No ID token received from Google');
