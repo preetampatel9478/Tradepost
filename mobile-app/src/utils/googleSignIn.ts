@@ -1,75 +1,125 @@
-import { Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import Constants from 'expo-constants';
 
-// Redirect scheme for OAuth
-const redirectUrl = AuthSession.getRedirectUrl();
-const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+// Completes pending auth sessions on iOS / web.
+WebBrowser.maybeCompleteAuthSession();
+
+const clientId = (process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '')
+  .trim()
+  .replace(/^"(.*)"$/, '$1')
+  .replace(/^'(.*)'$/, '$1');
 
 // Cache for the discovery document
 let cachedDiscovery: any = null;
 
 export const isGoogleSignInAvailable = () => {
-  return clientId !== undefined && clientId !== '';
+  return clientId !== '';
 };
+
+function getProjectFullNameForProxy(): string | null {
+  const owner = Constants.expoConfig?.owner;
+  const slug = Constants.expoConfig?.slug;
+  if (!owner || !slug) return null;
+  return `@${owner}/${slug}`;
+}
+
+function getProxyRedirectUri(projectFullName: string): string {
+  return `https://auth.expo.io/${projectFullName}`;
+}
 
 export const performGoogleSignIn = async () => {
   if (!isGoogleSignInAvailable()) {
     throw new Error('Google Client ID is not configured');
   }
 
+  const projectFullNameForProxy = getProjectFullNameForProxy();
+  const useProxy = Boolean(projectFullNameForProxy);
+  const proxyRedirectUri = projectFullNameForProxy ? getProxyRedirectUri(projectFullNameForProxy) : null;
+
   try {
-    // Get the OAuth discovery document
+    // Get the OAuth discovery document (expo-auth-session format)
     if (!cachedDiscovery) {
-      const discoveryUrl = 'https://accounts.google.com/.well-known/openid-configuration';
-      const response = await fetch(discoveryUrl);
-      if (!response.ok) throw new Error('Failed to fetch OAuth discovery');
-      cachedDiscovery = await response.json();
+      cachedDiscovery = await AuthSession.fetchDiscoveryAsync('https://accounts.google.com');
     }
 
-    const discovery = cachedDiscovery;
+    const discovery = cachedDiscovery as AuthSession.DiscoveryDocument;
     const scopes = ['profile', 'email'];
 
-    // Build the authorization request
-    const requestParams = new URLSearchParams({
-      response_type: 'code',
-      client_id: clientId!,
-      redirect_uri: redirectUrl,
-      scope: scopes.join(' '),
-      prompt: 'consent',
-    });
+    // When using the Expo AuthSession proxy (recommended for Expo Go), the provider redirect URI
+    // must be the proxy URL (https://auth.expo.io/@owner/slug). The proxy will then redirect back
+    // to the app return URL (exp://.../--/expo-auth-session).
+    const redirectUri = useProxy && proxyRedirectUri ? proxyRedirectUri : AuthSession.makeRedirectUri();
 
-    const authUrl = `${discovery.authorization_endpoint}?${requestParams.toString()}`;
+    // Build + load an AuthRequest (PKCE enabled by default)
+    const request = await AuthSession.loadAsync(
+      {
+        clientId: clientId!,
+        redirectUri,
+        responseType: AuthSession.ResponseType.Code,
+        scopes,
+        prompt: AuthSession.Prompt.Consent,
+        usePKCE: true,
+        extraParams: {
+          // Helps ensure refresh tokens are returned in some configurations.
+          access_type: 'offline',
+        },
+      },
+      discovery
+    );
 
     // Open the OAuth flow in browser
-    const result = await AuthSession.startAsync({
-      authUrl,
-      returnUrl: redirectUrl,
-      showInRecents: true,
-    });
+    let result: AuthSession.AuthSessionResult;
+    if (useProxy && proxyRedirectUri && projectFullNameForProxy) {
+      const authUrl = request.url ?? (await request.makeAuthUrlAsync(discovery));
+      const returnUrl = AuthSession.getDefaultReturnUrl();
+
+      const startUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
+        authUrl,
+        returnUrl,
+      }).toString()}`;
+
+      const webResult = await WebBrowser.openAuthSessionAsync(startUrl, returnUrl, {
+        showInRecents: true,
+      });
+
+      if (webResult.type !== 'success') {
+        result = { type: webResult.type } as AuthSession.AuthSessionResult;
+      } else {
+        result = request.parseReturnUrl(webResult.url);
+      }
+    } else {
+      // Fallback (no proxy). This may require allowlisting a dev redirect URL in Google.
+      result = await request.promptAsync(discovery, {
+        showInRecents: true,
+      });
+    }
 
     if (result.type !== 'success') {
-      throw new Error('OAuth authorization canceled or failed');
+      throw new Error(`OAuth authorization ${result.type}`);
     }
 
-    // Exchange the code for tokens using Google's token endpoint
-    const tokenResponse = await fetch(discovery.token_endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code: result.params.code,
-        client_id: clientId!,
-        redirect_uri: redirectUrl,
-        grant_type: 'authorization_code',
-      }).toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to exchange authorization code for tokens');
+    const code = result.params?.code;
+    if (!code) {
+      throw new Error('No authorization code returned from Google');
     }
 
-    const tokens = await tokenResponse.json();
-    const idToken = tokens.id_token;
+    // Exchange the code for tokens using expo-auth-session helpers
+    const tokenResponse = await AuthSession.exchangeCodeAsync(
+      {
+        clientId: clientId!,
+        code,
+        redirectUri,
+        extraParams: request.codeVerifier
+          ? {
+              code_verifier: request.codeVerifier,
+            }
+          : undefined,
+      },
+      discovery
+    );
+
+    const idToken = tokenResponse.idToken;
 
     if (!idToken) {
       throw new Error('No ID token received from Google');
