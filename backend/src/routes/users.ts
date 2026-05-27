@@ -139,15 +139,6 @@ router.get('/me/pending-requests', auth, async (req: AuthenticatedRequest, res, 
     return next(createError(500, 'Server error'));
   }
 });
-      total: me.followingCount ?? 0,
-      items,
-      limit,
-      skip,
-    });
-  } catch (err) {
-    return next(createError(500, 'Server error'));
-  }
-});
 
 // Current user's posts
 router.get('/me/posts', auth, async (req: AuthenticatedRequest, res, next) => {
