@@ -48,8 +48,19 @@ router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, n
     if (!mobileNumber?.trim()) return next(createError(400, 'Mobile Number is required'));
     if (!userId?.trim()) return next(createError(400, 'User ID is required'));
     if (!password || String(password).length < 6) return next(createError(400, 'Password must be at least 6 characters'));
-    const existingUser = await User.findOne({ $or: [{ mobileNumber }, { userId }] });
-    if (existingUser) return next(createError(409, 'User already exists'));
+    const existingUser = await User.findOne({ 
+      $or: [
+        { mobileNumber }, 
+        { userId },
+        ...(email ? [{ email: String(email).trim().toLowerCase() }] : [])
+      ] 
+    });
+    if (existingUser) {
+      if (existingUser.mobileNumber === mobileNumber) return next(createError(409, 'Mobile number already in use'));
+      if (existingUser.userId === userId) return next(createError(409, 'User ID already taken'));
+      if (email && (existingUser as any).email === String(email).trim().toLowerCase()) return next(createError(409, 'Email already in use'));
+      return next(createError(409, 'User already exists'));
+    }
     const passwordHash = await bcrypt.hash(password, 10);
 
     const uploadedFile = (req as any).file as Express.Multer.File | undefined;
@@ -85,7 +96,17 @@ router.post('/register', uploadAvatar.single('profilePhoto'), async (req, res, n
     });
   } catch (err: any) {
     // Duplicate key protection (unique indexes)
-    if (err?.code === 11000) return next(createError(409, 'User already exists'));
+    if (err?.code === 11000) {
+      if (err.keyValue) {
+        const field = Object.keys(err.keyValue)[0];
+        let displayField = field;
+        if (field === 'mobileNumber') displayField = 'Mobile number';
+        if (field === 'userId') displayField = 'User ID';
+        if (field === 'email') displayField = 'Email';
+        return next(createError(409, `${displayField} already in use`));
+      }
+      return next(createError(409, 'User already exists'));
+    }
     return next(createError(500, 'Registration failed'));
   }
 });
@@ -425,6 +446,14 @@ router.put('/complete-onboarding', authMiddleware, async (req: AuthenticatedRequ
   } catch (err: any) {
     logger.error('Complete Onboarding Error:', err);
     if (err?.code === 11000) {
+      if (err.keyValue) {
+        const field = Object.keys(err.keyValue)[0];
+        let displayField = field;
+        if (field === 'mobileNumber') displayField = 'Mobile number';
+        if (field === 'userId') displayField = 'User ID';
+        if (field === 'email') displayField = 'Email';
+        return next(createError(409, `${displayField} already in use`));
+      }
       return next(createError(409, 'Username is already taken'));
     }
     return next(createError(500, 'Failed to complete onboarding'));

@@ -17,6 +17,8 @@ import api from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getApiErrorMessage } from '../../utils/apiError';
 import { CommentsModal } from './CommentsModal';
+import { useAppSelector } from '../../hooks/reduxHooks';
+import OpinionCard from './OpinionCard';
 
 const { width } = Dimensions.get('window');
 
@@ -41,6 +43,9 @@ interface PublicProfileModalProps {
 
 export default function PublicProfileModal({ visible, userId, onClose }: PublicProfileModalProps) {
   const { theme, colors } = useTheme();
+
+  const currentUserId = useAppSelector((state) => state.auth.user?.id || '');
+  const currentUserHandle = useAppSelector((state) => state.auth.user?.userId || '');
 
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
@@ -317,44 +322,22 @@ export default function PublicProfileModal({ visible, userId, onClose }: PublicP
                 <Text style={[styles.hint, { color: colors.textSecondary }]}>No posts yet.</Text>
               ) : (
                 posts.map((p: any) => (
-                  <View key={String(p._id)} style={[styles.postCard, { borderColor: colors.border, backgroundColor: colors.card }]}
-                  >
-                    <Text style={[styles.postMeta, { color: colors.textSecondary }]}>
-                      {new Date(p.createdAt).toLocaleString()} • {String(p.sentiment || 'neutral')}
-                    </Text>
-                    <Text style={[styles.postBody, { color: colors.text }]}>{String(p.content || '')}</Text>
-
-                    {Array.isArray(p.mediaUrls) && p.mediaUrls.filter(Boolean).length ? (
-                      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.mediaStrip}>
-                        {p.mediaUrls
-                          .filter(Boolean)
-                          .slice(0, 5)
-                          .map((uri: string, idx: number) => (
-                            <View
-                              key={`${String(p._id)}_${idx}`}
-                              style={[styles.mediaFrame, { width: postMediaWidth, borderColor: colors.border, backgroundColor: colors.searchBg }]}
-                            >
-                              <Image source={{ uri }} style={styles.mediaImage} resizeMode="cover" />
-                            </View>
-                          ))}
-                      </ScrollView>
-                    ) : null}
-
-                    <Text style={[styles.postMeta, { color: colors.textSecondary, marginTop: 10 }]}
-                    >
-                      ❤ {Number(p.likeCount || 0)}   💬 {Number(p.commentCount || 0)}
-                    </Text>
-
-                    <View style={styles.postActionsRow}>
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-                        onPress={() => setCommentsForPostId(String(p._id))}
-                      >
-                        <Text style={[styles.actionChipText, { color: colors.text }]}>View comments</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                  <OpinionCard
+                    key={String(p._id)}
+                    post={p}
+                    isActive={false}
+                    onOpenComments={(postId) => setCommentsForPostId(postId)}
+                    onOpenProfile={() => {}}
+                    onReportPost={() => {}}
+                    onDeletePost={() => {}}
+                    currentUserId={currentUserId}
+                    currentUserHandle={currentUserHandle}
+                    onPostUpdated={(updatedPost) => {
+                      setPosts((prevPosts) =>
+                        prevPosts.map((post) => (post._id === updatedPost._id ? updatedPost : post))
+                      );
+                    }}
+                  />
                 ))
               )}
             </ScrollView>

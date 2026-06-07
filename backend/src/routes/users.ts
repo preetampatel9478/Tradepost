@@ -240,7 +240,17 @@ router.put('/me', auth, async (req: AuthenticatedRequest, res, next) => {
       },
     });
   } catch (err: any) {
-    if (err?.code === 11000) return next(createError(409, 'Duplicate value'));
+    if (err?.code === 11000) {
+      if (err.keyValue) {
+        const field = Object.keys(err.keyValue)[0];
+        let displayField = field;
+        if (field === 'mobileNumber') displayField = 'Mobile number';
+        if (field === 'userId') displayField = 'User ID';
+        if (field === 'email') displayField = 'Email';
+        return next(createError(409, `${displayField} already in use`));
+      }
+      return next(createError(409, 'Duplicate value'));
+    }
     return next(createError(500, 'Server error'));
   }
 });

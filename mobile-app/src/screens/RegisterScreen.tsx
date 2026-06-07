@@ -330,12 +330,12 @@ export default function RegisterScreen({ navigation }: any) {
               <Text style={styles.label}>Unique User ID *</Text>
               {isCheckingUserId && <Text style={styles.checkingText}>Checking...</Text>}
               {!isCheckingUserId && userIdAvailable === true && <Text style={styles.availableText}>Available</Text>}
-              {!isCheckingUserId && userIdAvailable === false && <Text style={styles.unavailableText}>Taken</Text>}
+              {!isCheckingUserId && userIdAvailable === false && <Text style={styles.unavailableText}>Taken. Add numbers to make it unique</Text>}
             </View>
             <TextInput
               value={userId}
-              onChangeText={setUserId}
-              placeholder="e.g. trader_john"
+              onChangeText={(text) => setUserId(text.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+              placeholder="e.g. traderjohn123"
               placeholderTextColor="#6F6F86"
               autoCapitalize="none"
               style={[

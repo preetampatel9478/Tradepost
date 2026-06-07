@@ -27,6 +27,8 @@ import api from '../../services/api';
 import { pickAndProcessImage } from '../../utils/imageProcessor';
 import { getApiErrorMessage } from '../../utils/apiError';
 import PublicProfileModal from './PublicProfileModal';
+import OpinionCard from './OpinionCard';
+import { CommentsModal } from './CommentsModal';
 
 const { width } = Dimensions.get('window');
 
@@ -1409,70 +1411,43 @@ export default function ProfileModal({ visible, onClose }: ProfileModalProps) {
                     <Text style={[styles.helpText, { color: colors.textSecondary }]}>No posts yet.</Text>
                   ) : (
                     myPosts.map((p: any) => (
-                      <View key={String(p._id)} style={[styles.postRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                        <Text style={[styles.postMeta, { color: colors.textSecondary }]}>
-                          {new Date(p.createdAt).toLocaleString()} • {String(p.sentiment || 'neutral')}
-                        </Text>
-                        <Text style={[styles.postContent, { color: colors.text }]}>
-                          {String(p.content || '')}
-                        </Text>
-
-                        {Array.isArray(p.mediaUrls) && p.mediaUrls.filter(Boolean).length ? (
-                          <ScrollView
-                            horizontal
-                            pagingEnabled
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.mediaStrip}
-                          >
-                            {p.mediaUrls
-                              .filter(Boolean)
-                              .slice(0, 5)
-                              .map((uri: string, idx: number) => (
-                                <View
-                                  key={`${String(p._id)}_${idx}`}
-                                  style={[
-                                    styles.mediaFrame,
-                                    {
-                                      width: postMediaWidth,
-                                      borderColor: colors.border,
-                                      backgroundColor: colors.searchBg,
-                                    },
-                                  ]}
-                                >
-                                  <Image source={{ uri }} style={styles.mediaImage} resizeMode="cover" />
-                                </View>
-                              ))}
-                          </ScrollView>
-                        ) : null}
-
-                        <Text style={[styles.postMeta, { color: colors.textSecondary, marginTop: 8 }]}
-                        >
-                          ❤ {Number(p.likeCount || 0)}   💬 {Number(p.commentCount || 0)}
-                        </Text>
-
-                        <View style={styles.postActionsRow}>
+                      <View key={String(p._id)}>
+                        <OpinionCard
+                          post={p}
+                          isActive={false}
+                          onOpenComments={() => openPostComments(p)}
+                          onOpenProfile={() => {}}
+                          onReportPost={() => {}}
+                          onDeletePost={async (postId) => {
+                            try {
+                              await api.delete(`/posts/${postId}`);
+                              setMyPosts((prev) => prev.filter((post) => post._id !== postId));
+                            } catch (error) {
+                              Alert.alert('Error', 'Failed to delete post.');
+                            }
+                          }}
+                          currentUserId={user?.id || ''}
+                          currentUserHandle={user?.userId || ''}
+                          onPostUpdated={(updatedPost) => {
+                            setMyPosts((prevPosts) => 
+                              prevPosts.map((post) => (post._id === updatedPost._id ? updatedPost : post))
+                            );
+                          }}
+                        />
+                        <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 16 }}>
                           <TouchableOpacity
                             activeOpacity={0.85}
-                            style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
-                            onPress={() => openPostComments(p)}
-                          >
-                            <Text style={[styles.actionChipText, { color: colors.text }]}>Comments</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            activeOpacity={0.85}
-                            style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                            style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg, flex: 1, marginRight: 8 }]}
                             onPress={() => openEditPost(p)}
                           >
-                            <Text style={[styles.actionChipText, { color: colors.text }]}>Edit</Text>
+                            <Text style={[styles.actionChipText, { color: colors.text, textAlign: 'center' }]}>Edit Post</Text>
                           </TouchableOpacity>
-
                           <TouchableOpacity
                             activeOpacity={0.85}
-                            style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg }]}
+                            style={[styles.actionChip, { borderColor: colors.border, backgroundColor: colors.searchBg, flex: 1, marginLeft: 8 }]}
                             onPress={() => deletePost(p)}
                           >
-                            <Text style={[styles.actionChipText, { color: colors.bearish }]}>Delete</Text>
+                            <Text style={[styles.actionChipText, { color: colors.bearish, textAlign: 'center' }]}>Delete Post</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
